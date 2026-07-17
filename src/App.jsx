@@ -2097,9 +2097,20 @@ function ProjectDetail({ id }) {
   const [creating, setCreating] = useState(false);
   const [issue, setIssue] = useState("");
   if (!p) return null;
+  if (!canViewProject(db, me, p)) {
+    return (
+      <div>
+        <button className={`${btnGhost} mb-2`} onClick={() => nav("projects")}><ChevronLeft className="h-3.5 w-3.5" />Dự án</button>
+        <UnauthorizedState />
+      </div>
+    );
+  }
+  const EFFORT_W = { S: 1, M: 2, L: 4 };
   const pts = db.tasks.filter((t) => !t.deleted && t.projectId === id && canSeeTask(db, me, t));
+  const totalW = pts.reduce((s, t) => s + (EFFORT_W[t.effort] ?? 1), 0);
+  const doneW = pts.filter((t) => t.status === "done").reduce((s, t) => s + (EFFORT_W[t.effort] ?? 1), 0);
   const done = pts.filter((t) => t.status === "done").length;
-  const pct = pts.length ? Math.round((done / pts.length) * 100) : 0;
+  const pct = totalW ? Math.round((doneW / totalW) * 100) : 0;
   const members = [...new Set(pts.flatMap((t) => [t.ownerId, ...(t.collaboratorIds || [])]).filter(Boolean))];
   const editable = ["admin", "ceo"].includes(me.role) || p.ownerId === me.id;
   const tabs = [["overview", "Tổng quan"], ["tasks", "Công việc"], ["timeline", "Timeline"], ["members", "Thành viên"], ["issues", "Vấn đề"]];
