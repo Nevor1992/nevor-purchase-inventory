@@ -15,9 +15,12 @@ Cờ điều khiển: `SUPABASE_ENABLED` trong `src/lib/supabase.js` (tự bật
    - `Project URL` → `VITE_SUPABASE_URL`
    - `anon public` key → `VITE_SUPABASE_ANON_KEY` *(khoá này an toàn để lộ, nằm trong frontend)*
    - ⚠️ **Không chia sẻ `service_role` key** — đó là khoá bí mật, chỉ dùng ở server.
-3. Áp schema + RLS (Dashboard → SQL Editor, dán lần lượt 2 file):
-   - `supabase/migrations/20260101000000_init.sql`
-   - `supabase/migrations/20260101000001_rls.sql`
+3. Áp schema + RLS (Dashboard → SQL Editor, dán lần lượt **theo đúng thứ tự** các file trong `supabase/migrations/`):
+   - `20260101000000_init.sql` — schema chính
+   - `20260101000001_rls.sql` — RLS policies
+   - `20260101000002_app_tables.sql` — documents / hr_processes / saved_filters + trigger auth→users
+   - `20260101000003_ui_columns.sql` — cột bổ sung cho UI
+   - `20260101000004_rls_nullsafe.sql` — **bắt buộc**: vá lỗ hổng lộ task bảo mật (NULL leak) + sửa quyền tick checklist
    *(hoặc dùng Supabase CLI: `supabase db push`)*
 4. Tạo **Storage bucket** tên `attachments` (private) cho file đính kèm.
 5. Tạo user admin đầu tiên: **Authentication → Add user** (email + password), rồi trong SQL Editor thêm dòng vào `public.users` với **cùng `id`** của auth user đó (role `admin`, dept `hr`…).
@@ -50,6 +53,12 @@ Một số phần UI đang có trong prototype nhưng **chưa có bảng** trong
 2. `npm run build` → deploy `dist/` lên Vercel/Netlify/Cloudflare Pages; set 2 biến env trên hosting.
 3. `supabase functions deploy scheduler` + bật `pg_cron` (nhắc deadline + task định kỳ chạy server-side).
 4. Gắn domain riêng.
+
+---
+
+## Kiểm thử RLS không cần project thật
+
+`scripts/test-rls-local.sh` dựng Postgres cục bộ giả lập môi trường Supabase (schema `auth`, `auth.uid()`, role `authenticated`), áp toàn bộ migrations rồi chạy 48 test phân quyền trong `supabase/tests/rls_test.sql` (task private/bảo mật HR, checklist theo người, request bảo mật, audit log bất biến, trigger auth→users…). Bộ test này đã bắt được 2 lỗi bảo mật thật (xem migration `000004`).
 
 ---
 

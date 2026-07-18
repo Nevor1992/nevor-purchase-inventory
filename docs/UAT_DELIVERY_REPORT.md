@@ -43,6 +43,17 @@
 
 **Test coverage:** 44 unit tests pass (was 27). New suites cover the field-level `updateTask` guard, HR-confidential split, and confidential-request visibility. Probation date computation verified end-to-end in the browser.
 
+### Round 4 — RLS verified against real PostgreSQL (local harness)
+
+A new local test harness (`scripts/test-rls-local.sh` + `supabase/tests/rls_test.sql`, 48 assertions) runs every migration on a real PostgreSQL 16 instance with a Supabase-environment shim (`auth.uid()`, `authenticated` role) and exercises the policies per persona. It caught two genuine security bugs in the SQL layer that the JS unit tests could not see:
+
+| # | Area | Bug | Fix |
+|---|------|-----|-----|
+| 20 | **Confidential-task NULL leak** | `task_involves_me()` compares `assigner_id`/`approver_id` (usually NULL) with `auth.uid()`; NULL propagated through the OR-chain, so in `can_view_task()` the guard branch `is_confidential and not can_see_confidential(t)` evaluated to NULL (skipped) and fell through to `when is_confidential then true` — **any user could read confidential tasks (incl. HR records) whenever the task had no approver** | Migration `20260101000004_rls_nullsafe.sql`: `coalesce(..., false)` in `is_manager` / `is_ceo` / `task_involves_me` / `can_see_confidential` |
+| 21 | Checklist toggle policy dead arm | In policy `task_checklist: toggle own items`, unqualified `owner_id` inside the `tasks` subquery resolved to `tasks.owner_id`, not `task_checklist.owner_id` — collaborators could never tick their own items via the API | Policy recreated with qualified `task_checklist.owner_id` |
+
+RLS suite: **48/48 pass** after the fix (before: 44/48). Also verified on real Postgres: all 5 migrations apply cleanly in order; `audit_log` immutable even for direct UPDATE/DELETE; `auth.users → public.users` sync trigger creates an `employee` profile row.
+
 ---
 
 ## 2. Changed Files
