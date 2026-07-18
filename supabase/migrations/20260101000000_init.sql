@@ -8,9 +8,9 @@ create extension if not exists pg_cron;
 -- ENUMS
 -- ============================================================
 create type user_role as enum ('employee','leader','admin','ceo');
-create type task_status as enum ('todo','doing','paused','review','revise','done');
+create type task_status as enum ('todo','doing','waiting','paused','review','revise','done');
 create type task_type as enum ('personal','dept','project','cross','confidential','recurring');
-create type task_priority as enum ('low','normal','high','critical');
+create type task_priority as enum ('low','normal','high','urgent');
 create type task_effort as enum ('S','M','L');
 create type req_status as enum ('pending','deadline_proposed','accepted','info','processing','delivered','confirmed','rejected','cancelled');
 create type req_visibility as enum ('PRIVATE','SENDER_DEPARTMENT','BOTH_DEPARTMENTS','PROJECT','COMPANY');
