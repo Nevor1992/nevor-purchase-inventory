@@ -1305,26 +1305,29 @@ function TaskForm({ onClose, defaults = {} }) {
   return (
     <Modal title="Tạo công việc" onClose={() => onClose(null)} wide>
       <Field label="Tên công việc" req><input autoFocus className={inputCls} value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Ví dụ: Hoàn thiện brief KOC cho đai lưng" /></Field>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3">
+      {/* Quick create — chỉ 3 trường cốt lõi; phần còn lại nằm trong "Thêm chi tiết" */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-3">
         <Field label="Người chịu trách nhiệm" req={!isPersonal}><UserSelect value={f.ownerId} onChange={(v) => set("ownerId", v)} users={assignList} placeholder="— Chưa có —" />{me.role === "employee" && !proj && <p className="mt-1 text-[10px] text-zinc-400">Nhân viên tạo task cho chính mình. Cần phòng khác xử lý → dùng Yêu cầu phối hợp.</p>}</Field>
         <Field label="Deadline" req={!isPersonal}>
           <input type="date" className={inputCls} value={f.deadline || ""} disabled={f.noDeadline} onChange={(e) => set("deadline", e.target.value)} />
           {isPersonal && <label className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500"><input type="checkbox" checked={f.noDeadline} onChange={(e) => set("noDeadline", e.target.checked)} className="accent-zinc-800" />Ghi chú cá nhân, không cần deadline</label>}
         </Field>
-        <Field label="Phòng ban" req><select className={inputCls} value={f.deptId} onChange={(e) => set("deptId", e.target.value)}>{allowedDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
-        <Field label="Brand">{deptBrand(db, f.deptId) ? (
-          <p className="flex items-center gap-1.5 pt-1.5 text-xs text-zinc-500"><BrandChip id={deptBrand(db, f.deptId)} /> theo phòng ban</p>
-        ) : (
-          <select className={inputCls} value={f.brandId || ""} onChange={(e) => set("brandId", e.target.value || null)}><option value="">Chung (cả 2 brand)</option>{BRAND_ORDER.map((b) => <option key={b} value={b}>{BRANDS[b].label}</option>)}</select>
-        )}</Field>
-        <Field label="Loại công việc"><select className={inputCls} value={f.type} onChange={(e) => set("type", e.target.value)}>{Object.entries(TASK_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
-        <Field label="Trạng thái"><select className={inputCls} value={f.status} onChange={(e) => set("status", e.target.value)}>{["todo", "doing"].map((s) => <option key={s} value={s}>{STATUSES[s].label}</option>)}</select></Field>
         <Field label="Mức độ ưu tiên"><select className={inputCls} value={f.priority} onChange={(e) => set("priority", e.target.value)}>{PRIORITY_ORDER.map((p) => <option key={p} value={p}>{PRIORITIES[p].label}</option>)}</select></Field>
       </div>
       {!more ? (
-        <button className="text-xs font-medium text-zinc-500 hover:text-zinc-800 inline-flex items-center gap-1 mb-2" onClick={() => setMore(true)}><ChevronDown className="h-3.5 w-3.5" />Thông tin mở rộng (mô tả, người duyệt, dự án, checklist…)</button>
+        <button className="text-xs font-medium text-zinc-500 hover:text-zinc-800 inline-flex items-center gap-1 mb-2" onClick={() => setMore(true)}><ChevronDown className="h-3.5 w-3.5" />Thêm chi tiết (phòng ban, loại, mô tả, người duyệt, dự án…)</button>
       ) : (
         <div className="border-t border-zinc-100 pt-3 mt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3">
+            <Field label="Phòng ban" req><select className={inputCls} value={f.deptId} onChange={(e) => set("deptId", e.target.value)}>{allowedDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
+            <Field label="Brand">{deptBrand(db, f.deptId) ? (
+              <p className="flex items-center gap-1.5 pt-1.5 text-xs text-zinc-500"><BrandChip id={deptBrand(db, f.deptId)} /> theo phòng ban</p>
+            ) : (
+              <select className={inputCls} value={f.brandId || ""} onChange={(e) => set("brandId", e.target.value || null)}><option value="">Chung (cả 2 brand)</option>{BRAND_ORDER.map((b) => <option key={b} value={b}>{BRANDS[b].label}</option>)}</select>
+            )}</Field>
+            <Field label="Loại công việc"><select className={inputCls} value={f.type} onChange={(e) => set("type", e.target.value)}>{Object.entries(TASK_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+            <Field label="Trạng thái"><select className={inputCls} value={f.status} onChange={(e) => set("status", e.target.value)}>{["todo", "doing"].map((s) => <option key={s} value={s}>{STATUSES[s].label}</option>)}</select></Field>
+          </div>
           <Field label="Mô tả"><textarea className={inputCls} rows={2} value={f.desc} onChange={(e) => set("desc", e.target.value)} /></Field>
           <Field label="Kết quả kỳ vọng"><input className={inputCls} value={f.deliverable} onChange={(e) => set("deliverable", e.target.value)} placeholder="VD: File brief PDF hoàn chỉnh" /></Field>
           <Field label="Tiêu chí nghiệm thu"><input className={inputCls} value={f.acceptance} onChange={(e) => set("acceptance", e.target.value)} placeholder="VD: Đủ 3 angle · đúng format 6P · được Leader duyệt" /></Field>
