@@ -46,19 +46,20 @@ describe("perms.view", () => {
     expect(perms.view(db, admin, deletedTask)).toBe(true);
   });
 
-  it("HR confidential task: visible to HR leader, admin, ceo — hidden from other leaders", () => {
-    const hrTask = db.tasks.find((t) => t.isConfidential && t.deptId === "hr");
-    if (!hrTask) return;
+  it("HR confidential task: visible to HR leader & ceo — hidden from system admin and other leaders", () => {
+    // build a fresh HR confidential task with nobody special involved
+    const hrTask = {
+      ...db.tasks[0], isConfidential: true, deptId: "hr", deleted: false, locked: false,
+      ownerId: "vy", creatorId: "vy", assignerId: "vy", approverId: null, collaboratorIds: [], allowedViewerIds: [],
+    };
     const vy = user("vy");       // HR leader
-    const admin = user("admin"); // confidentialAccess
-    const ceo = user("ceo");     // confidentialAccess
+    const admin = user("admin"); // system admin — must NOT see HR data
+    const ceo = user("ceo");
     const linh = user("linh");   // Content leader — not involved
     expect(perms.view(db, vy, hrTask)).toBe(true);
-    expect(perms.view(db, admin, hrTask)).toBe(true);
     expect(perms.view(db, ceo, hrTask)).toBe(true);
-    if (!hrTask.collaboratorIds.includes("linh") && hrTask.ownerId !== "linh") {
-      expect(perms.view(db, linh, hrTask)).toBe(false);
-    }
+    expect(perms.view(db, admin, hrTask)).toBe(false); // (a): system admin split from HR confidential
+    expect(perms.view(db, linh, hrTask)).toBe(false);
   });
 
   it("deleting a confidential task does not widen visibility", () => {
@@ -342,5 +343,74 @@ describe("canApplyTaskPatch (updateTask backdoor closed)", () => {
     const t = { ...db.tasks[0], type: "dept", locked: false, deleted: false };
     expect(canApplyTaskPatch(db, admin, t, { ownerId: "x" }).ok).toBe(true);
     expect(canApplyTaskPatch(db, admin, t, { approverId: "x" }).ok).toBe(true);
+  });
+});
+
+// ── 11. HR confidential access split (system admin ≠ HR data access) ───────────
+describe("HR confidential access (perms.view)", () => {
+  const hrConfTask = () => ({
+    ...db.tasks[0], isConfidential: true, deptId: "hr", deleted: false, locked: false,
+    ownerId: "vy", creatorId: "vy", assignerId: "vy", approverId: null, collaboratorIds: [], allowedViewerIds: [],
+  });
+
+  it("system admin CANNOT view an HR confidential task", () => {
+    const admin = db.users.find((u) => u.id === "admin");
+    expect(perms.view(db, admin, hrConfTask())).toBe(false);
+  });
+
+  it("HR leader CAN view an HR confidential task", () => {
+    const hrLeaderId = db.depts.find((d) => d.id === "hr")?.leaderId;
+    const hrLeader = db.users.find((u) => u.id === hrLeaderId);
+    if (!hrLeader) return;
+    expect(perms.view(db, hrLeader, hrConfTask())).toBe(true);
+  });
+
+  it("CEO CAN view an HR confidential task", () => {
+    const ceo = db.users.find((u) => u.role === "ceo");
+    expect(perms.view(db, ceo, hrConfTask())).toBe(true);
+  });
+
+  it("system admin CAN still view a NON-HR confidential task (manager)", () => {
+    const admin = db.users.find((u) => u.id === "admin");
+    const t = { ...hrConfTask(), deptId: "content", ownerId: "linh", creatorId: "linh", assignerId: "linh" };
+    expect(perms.view(db, admin, t)).toBe(true);
+  });
+});
+
+// ── 12. Confidential requests (canViewRequest) ────────────────────────────────
+describe("canViewRequest — confidential HR request", () => {
+  const confReq = () => ({
+    ...db.requests[0], isConfidential: true, toDeptId: "hr", fromDeptId: "content",
+    fromUserId: "mai", receiverId: null, handlerId: null, deleted: false,
+    authorized_sender_ids: [], allowedViewerIds: [],
+  });
+
+  it("sender sees their own confidential request", () => {
+    const mai = db.users.find((u) => u.id === "mai");
+    expect(canViewRequest(db, mai, confReq())).toBe(true);
+  });
+
+  it("system admin CANNOT see a confidential HR request", () => {
+    const admin = db.users.find((u) => u.id === "admin");
+    expect(canViewRequest(db, admin, confReq())).toBe(false);
+  });
+
+  it("CEO can see a confidential request", () => {
+    const ceo = db.users.find((u) => u.role === "ceo");
+    expect(canViewRequest(db, ceo, confReq())).toBe(true);
+  });
+
+  it("HR leader can see a confidential request sent to HR", () => {
+    const hrLeaderId = db.depts.find((d) => d.id === "hr")?.leaderId;
+    const hrLeader = db.users.find((u) => u.id === hrLeaderId);
+    if (!hrLeader) return;
+    expect(canViewRequest(db, hrLeader, confReq())).toBe(true);
+  });
+
+  it("unrelated employee (same sender dept, not authorized) CANNOT see confidential request", () => {
+    // another Content employee who is not the sender
+    const other = db.users.find((u) => u.deptId === "content" && u.id !== "mai" && u.role === "employee");
+    if (!other) return;
+    expect(canViewRequest(db, other, confReq())).toBe(false);
   });
 });

@@ -109,8 +109,8 @@ const DEFAULT_RECEIVERS = { media: "dat", aff: "huy", cx: "nhung", rnd: "lan", p
 SEED_DEPTS.forEach((d) => { d.defaultReceiverId = d.leaderId ? null : DEFAULT_RECEIVERS[d.id] || null; });
 
 const SEED_USERS = [
-  { id: "ceo",   name: "Anh Tuấn",  role: "ceo",      deptId: "brand",   title: "CEO Novix", confidentialAccess: true },
-  { id: "admin", name: "Ngọc Vũ",   role: "admin",    deptId: "hr",      title: "Quản trị hệ thống", confidentialAccess: true },
+  { id: "ceo",   name: "Anh Tuấn",  role: "ceo",      deptId: "brand",   title: "CEO Novix" },
+  { id: "admin", name: "Ngọc Vũ",   role: "admin",    deptId: "hr",      title: "Quản trị hệ thống" },
   { id: "linh",  name: "Linh",      role: "leader",   deptId: "content", title: "Leader Content" },
   { id: "minh",  name: "Minh",      role: "leader",   deptId: "brand",   title: "Leader Growth Nevor" },
   { id: "trung", name: "Trung",     role: "leader",   deptId: "growth_uh", title: "Leader Growth UHero" },
@@ -458,11 +458,25 @@ const inProject = (db, u, projectId) => { const p = projById(db, projectId); ret
 /* quyền quản lý task = leader phòng sở hữu / project owner / admin / ceo */
 const canManage = (db, u, t) => isMgr(u) || isDeptLeader(db, u, t.deptId) || isProjOwner(db, u, t);
 
+/* ---- Quyền xem dữ liệu BẢO MẬT — tách riêng, KHÔNG cấp mặc định cho system admin ----
+   Hồ sơ nhân sự (task mật thuộc phòng HR): chỉ người liên quan, Leader HR,
+   CEO, hoặc người được cấp cờ hrConfidentialAccess. Quản trị hệ thống (role admin)
+   KHÔNG tự động thấy hồ sơ HR — "admin kỹ thuật ≠ quyền xem hồ sơ nhân sự".
+   Task mật ngoài HR (vd tài chính nhạy cảm): người liên quan + leader phòng + admin/ceo. */
+const canSeeConfidential = (db, u, t) => {
+  if (!u || !t) return false;
+  if (involved(u, t)) return true;
+  /* Hồ sơ nhân sự: HR leader / CEO / người được cấp cờ — KHÔNG có system admin */
+  if (t.deptId === "hr") return isHrLeader(db, u) || u.role === "ceo" || u.hrConfidentialAccess === true;
+  /* Task mật ngoài HR: giữ nguyên hành vi cũ — chỉ manager hệ thống (admin/ceo), không mở cho leader phòng */
+  return isMgr(u);
+};
+
 const perms = {
   view(db, u, t) {
     if (!u || !t) return false;
     /* task mật: gate bảo mật áp dụng cả khi đã xóa — xóa không được mở rộng quyền xem */
-    const confOk = !t.isConfidential || involved(u, t) || (t.deptId === "hr" && isHrLeader(db, u)) || u.confidentialAccess === true;
+    const confOk = !t.isConfidential || canSeeConfidential(db, u, t);
     if (t.deleted) return canManage(db, u, t) && confOk;
     if (t.isConfidential) return confOk;
     const vis = t.visibility || "department";
@@ -613,10 +627,19 @@ const canViewProject = (db, u, p) => !p.deleted && (isMgr(u) || p.ownerId === u.
 /* Quyền xem request — theo visibility field */
 const canViewRequest = (db, u, r) => {
   if (r.deleted) return isMgr(u);
+  const directly = r.fromUserId === u.id || r.receiverId === u.id || r.handlerId === u.id
+    || (r.authorized_sender_ids || []).includes(u.id) || (r.allowedViewerIds || []).includes(u.id);
+  if (directly) return true;
+  /* Yêu cầu BẢO MẬT (hồ sơ / nghỉ phép / chính sách HR…): chỉ CEO, leader 2 phòng,
+     và HR access nếu gửi tới HR — KHÔNG cấp cho system admin (giống gate task mật). */
+  if (r.isConfidential) {
+    if (u.role === "ceo") return true;
+    if (isDeptLeader(db, u, r.fromDeptId) || isDeptLeader(db, u, r.toDeptId)) return true;
+    if (r.toDeptId === "hr" && (isHrLeader(db, u) || u.hrConfidentialAccess === true)) return true;
+    return false;
+  }
   if (isMgr(u)) return true;
   const vis = r.visibility || "BOTH_DEPARTMENTS";
-  const directly = r.fromUserId === u.id || r.receiverId === u.id || r.handlerId === u.id || (r.authorized_sender_ids || []).includes(u.id);
-  if (directly) return true;
   if (vis === "PRIVATE") return false;
   if (vis === "SENDER_DEPARTMENT") return u.deptId === r.fromDeptId || isDeptLeader(db, u, r.fromDeptId);
   if (vis === "BOTH_DEPARTMENTS") return u.deptId === r.fromDeptId || u.deptId === r.toDeptId || isDeptLeader(db, u, r.fromDeptId) || isDeptLeader(db, u, r.toDeptId);
@@ -2358,12 +2381,13 @@ function RequestForm({ onClose }) {
       <Field label="Nội dung yêu cầu" req><textarea className={inputCls} rows={3} value={f.content} onChange={(e) => set("content", e.target.value)} /></Field>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3">
         <Field label="Phòng ban nhận" req><select className={inputCls} value={f.toDeptId} onChange={(e) => set("toDeptId", e.target.value)}><option value="">— Chọn —</option>{db.depts.filter((d) => d.id !== me.deptId).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
-        {f.toDeptId === "hr" && <Field label="Loại yêu cầu nhân sự"><select className={inputCls} value={f.reqType || ""} onChange={(e) => set("reqType", e.target.value)}><option value="">— Chọn loại —</option>{["Xác nhận hồ sơ", "Nghỉ phép", "Trang thiết bị", "Chính sách/Phúc lợi", "Khác"].map((x) => <option key={x} value={x}>{x}</option>)}</select></Field>}
+        {f.toDeptId === "hr" && <Field label="Loại yêu cầu nhân sự"><select className={inputCls} value={f.reqType || ""} onChange={(e) => { const v = e.target.value; setF((x) => ({ ...x, reqType: v, isConfidential: ["Xác nhận hồ sơ", "Nghỉ phép", "Chính sách/Phúc lợi"].includes(v) ? true : x.isConfidential })); }}><option value="">— Chọn loại —</option>{["Xác nhận hồ sơ", "Nghỉ phép", "Trang thiết bị", "Chính sách/Phúc lợi", "Khác"].map((x) => <option key={x} value={x}>{x}</option>)}</select></Field>}
         <Field label="Mức độ ưu tiên"><select className={inputCls} value={f.priority} onChange={(e) => set("priority", e.target.value)}>{PRIORITY_ORDER.map((p) => <option key={p} value={p}>{PRIORITIES[p].label}</option>)}</select></Field>
         <Field label="Deadline đề xuất" req><input type="date" className={inputCls} value={f.proposedDeadline} onChange={(e) => set("proposedDeadline", e.target.value)} /></Field>
         <Field label="Kết quả cần bàn giao"><input className={inputCls} value={f.deliverable} onChange={(e) => set("deliverable", e.target.value)} /></Field>
         <Field label="Brand liên quan"><select className={inputCls} value={f.brandId || ""} onChange={(e) => set("brandId", e.target.value || null)}><option value="">Chung (cả 2 brand)</option>{BRAND_ORDER.map((b) => <option key={b} value={b}>{BRANDS[b].label}</option>)}</select></Field>
       </div>
+      <label className="mb-2 flex items-center gap-2 text-[13px] text-zinc-600"><input type="checkbox" checked={!!f.isConfidential} onChange={(e) => set("isConfidential", e.target.checked)} className="accent-zinc-800" />Yêu cầu bảo mật — chỉ leader hai phòng &amp; người liên quan xem (dùng cho hồ sơ, nghỉ phép, chính sách nhân sự)</label>
       <div className="flex justify-end gap-2 border-t border-zinc-100 pt-3">
         <button className={btnSec} onClick={onClose}>Hủy</button>
         <button className={btnPri} disabled={!f.title.trim() || !f.content.trim() || !f.toDeptId} onClick={() => { act.createRequest(f); toast("Đã gửi yêu cầu"); onClose(); }}><Send className="h-4 w-4" />Gửi yêu cầu</button>
@@ -2402,7 +2426,7 @@ function RequestDrawer({ reqId, onClose }) {
         <div className="border-b border-zinc-100 px-5 py-3">
           <div className="flex items-center gap-2">
             <span className="font-mono text-[11px] text-zinc-400">{r.code}</span>
-            <ReqPill s={r.status} /><PriorityPill p={r.priority} /><BrandChip id={r.brandId} />
+            <ReqPill s={r.status} /><PriorityPill p={r.priority} /><BrandChip id={r.brandId} />{r.isConfidential && <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-600"><Lock className="h-3 w-3" />Mật</span>}
             <button onClick={onClose} className="ml-auto rounded-md p-1.5 hover:bg-zinc-100 text-zinc-400"><X className="h-4 w-4" /></button>
           </div>
           <h2 className="mt-1.5 text-[15px] font-semibold text-zinc-900">{r.title}</h2>
@@ -3335,7 +3359,7 @@ export default function App() {
     createProject: (f) => setDb((prev) => ({ ...prev, projects: [...prev.projects, { id: uid("p"), code: `PRJ-${String(prev.projects.length + 1).padStart(2, "0")}`, watcherIds: [], issues: [], status: "prep", desc: "", ...f }] })),
     updateProject: (id, patch) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === id ? { ...p, ...patch } : p) })),
     createRequest: (f) => setDb((prev) => {
-      const r = { id: uid("r"), code: nextReqCode(prev), deadlineProposals: [], pendingHandlerId: null, reqType: f.reqType || null, ...f, brandId: f.brandId || deptBrand(prev, me.deptId) || deptBrand(prev, f.toDeptId) || null, fromDeptId: me.deptId, fromUserId: meId, receiverId: null, handlerId: null, agreedDeadline: null, status: "pending", rejectReason: "", attachments: [], comments: [], logs: [{ id: uid("l"), userId: meId, at: Date.now(), text: "tạo yêu cầu phối hợp" }], taskId: null, createdAt: Date.now() };
+      const r = { id: uid("r"), code: nextReqCode(prev), deadlineProposals: [], pendingHandlerId: null, reqType: f.reqType || null, ...f, isConfidential: !!f.isConfidential, allowedViewerIds: f.allowedViewerIds || [], brandId: f.brandId || deptBrand(prev, me.deptId) || deptBrand(prev, f.toDeptId) || null, fromDeptId: me.deptId, fromUserId: meId, receiverId: null, handlerId: null, agreedDeadline: null, status: "pending", rejectReason: "", attachments: [], comments: [], logs: [{ id: uid("l"), userId: meId, at: Date.now(), text: "tạo yêu cầu phối hợp" }], taskId: null, createdAt: Date.now() };
       let next = { ...prev, requests: [r, ...prev.requests] };
       const rcv = deptReceiverId(prev, f.toDeptId);
       if (rcv) next = notify(next, rcv, `Yêu cầu phối hợp mới từ ${deptById(prev, me.deptId)?.name}: ${f.title}`, { requestId: r.id }, "act");
@@ -3458,6 +3482,11 @@ export default function App() {
         let next = prev;
         const taskIds = [];
         const base = new Date(f.startDate + "T00:00:00").getTime();
+        /* Mốc linh hoạt cho thử việc: HR nhập số ngày + ngày giữa kỳ (mặc định: 60 ngày, giữa kỳ = nửa chặng) */
+        const probationDays = Number(f.probationDays) || 60;
+        const finalBase = f.finalReviewDate ? new Date(f.finalReviewDate + "T00:00:00").getTime() : base + probationDays * DAY;
+        const midBase = f.midReviewDate ? new Date(f.midReviewDate + "T00:00:00").getTime() : base + Math.floor(probationDays / 2) * DAY;
+        const anchors = { start: base, mid: midBase, final: finalBase };
         const leaderId = deptById(prev, f.deptId)?.leaderId || deptById(prev, f.deptId)?.defaultReceiverId;
         tpl.items.forEach((it) => {
           const [title, offset, ownerRole, approverRole, ack] = it;
@@ -3465,7 +3494,7 @@ export default function App() {
           const approverId = approverRole ? hrResolveRole(prev, approverRole, f) : null;
           const id = uid("t");
           taskIds.push(id);
-          const dl = iso(base + offset * DAY);
+          const dl = iso(hrAnchorTime(offset, anchors));
           const nt = {
             id, code: nextTaskCode(next), name: `${title} — ${f.personName}`,
             desc: `Thuộc quy trình ${tpl.label} của ${f.personName} (${deptById(prev, f.deptId)?.name}). Ngày bắt đầu quy trình: ${fmtDFull(f.startDate)}.`,
@@ -3489,7 +3518,7 @@ export default function App() {
           if (ownerId && ownerId !== meId) next = notify(next, ownerId, "Bạn có một công việc nhân sự cần xử lý.", { taskId: id }, "act");
           count++;
         });
-        next = { ...next, hrProcesses: [{ id: procId, type: f.type, personName: f.personName, userId: f.userId || null, deptId: f.deptId, startDate: f.startDate, taskIds, status: "active", createdAt: Date.now(), closedAt: null, closeNote: "" }, ...(next.hrProcesses || [])] };
+        next = { ...next, hrProcesses: [{ id: procId, type: f.type, personName: f.personName, userId: f.userId || null, deptId: f.deptId, startDate: f.startDate, probationDays: f.type === "probation" ? probationDays : null, midReviewDate: f.type === "probation" ? iso(midBase) : null, finalReviewDate: f.type === "probation" ? iso(finalBase) : null, taskIds, status: "active", createdAt: Date.now(), closedAt: null, closeNote: "" }, ...(next.hrProcesses || [])] };
         return next;
       });
       return { ok: true, id: procId, count: tpl.items.length };
@@ -3591,16 +3620,19 @@ const HR_TEMPLATES = {
     ],
   },
   probation: {
-    label: "Thử việc", cat: "HR_PROBATION", conf: true,
+    label: "Thử việc", cat: "HR_PROBATION", conf: true, flexible: true,
+    /* offset là MỐC linh hoạt: {a:'start'|'mid'|'final', o:lệch ngày} — HR nhập
+       số ngày thử việc + ngày đánh giá giữa kỳ, deadline tự tính theo từng nhân sự
+       (intern 30 ngày, chính thức 60 ngày, part-time… đều dùng chung template). */
     items: [
-      ["Xác nhận mục tiêu thử việc với nhân sự", 0, "leader", "hr"],
-      ["Bàn giao tiêu chí đánh giá cho nhân sự", 1, "leader", null],
-      ["Đánh giá giữa kỳ thử việc", 30, "leader", "hr"],
-      ["Nhân sự tự đánh giá cuối kỳ", 55, "staff", null],
-      ["Leader đánh giá cuối kỳ", 58, "leader", "hr"],
-      ["HR tổng hợp hồ sơ đánh giá", 60, "hr", null],
-      ["Duyệt kết quả thử việc", 61, "ceo", null],
-      ["Thông báo kết quả cho nhân sự", 62, "hr", null],
+      ["Xác nhận mục tiêu thử việc với nhân sự", { a: "start", o: 0 }, "leader", "hr"],
+      ["Bàn giao tiêu chí đánh giá cho nhân sự", { a: "start", o: 1 }, "leader", null],
+      ["Đánh giá giữa kỳ thử việc", { a: "mid", o: 0 }, "leader", "hr"],
+      ["Nhân sự tự đánh giá cuối kỳ", { a: "final", o: -5 }, "staff", null],
+      ["Leader đánh giá cuối kỳ", { a: "final", o: -2 }, "leader", "hr"],
+      ["HR tổng hợp hồ sơ đánh giá", { a: "final", o: 0 }, "hr", null],
+      ["Duyệt kết quả thử việc", { a: "final", o: 1 }, "ceo", null],
+      ["Thông báo kết quả cho nhân sự", { a: "final", o: 2 }, "hr", null],
     ],
   },
   training: {
@@ -3632,6 +3664,15 @@ const HR_TEMPLATES = {
     ],
   },
 };
+
+/* Nhãn mốc của item template: số = offset ngày (D±n); object = mốc linh hoạt (BĐ/GK/CK ± n) */
+const hrOffsetLabel = (spec) => typeof spec === "number"
+  ? `D${spec >= 0 ? "+" + spec : spec}`
+  : `${({ start: "BĐ", mid: "GK", final: "CK" })[spec.a] || spec.a}${spec.o ? (spec.o > 0 ? "+" + spec.o : spec.o) : ""}`;
+/* Thời điểm (ms) của một item dựa trên các mốc thật (start/mid/final) của quy trình */
+const hrAnchorTime = (spec, anchors) => typeof spec === "number"
+  ? anchors.start + spec * DAY
+  : (anchors[spec.a] ?? anchors.start) + (spec.o || 0) * DAY;
 
 const hrResolveRole = (db, role, p) => {
   if (role === "hr") return deptById(db, "hr")?.leaderId || "vy";
@@ -3800,8 +3841,16 @@ function HRPage() {
 
 function HrProcessForm({ onClose }) {
   const { db, act, toast } = useApp();
-  const [f, setF] = useState({ type: "onboarding", personName: "", userId: "", deptId: "content", startDate: todayISO() });
+  const [f, setF] = useState({ type: "onboarding", personName: "", userId: "", deptId: "content", startDate: todayISO(), probationDays: 60, midReviewDate: "" });
   const tpl = HR_TEMPLATES[f.type];
+  /* Với thử việc: tính mốc thật để preview đúng ngày cho từng nhân sự */
+  const base = f.startDate ? new Date(f.startDate + "T00:00:00").getTime() : Date.now();
+  const days = Number(f.probationDays) || 60;
+  const anchors = {
+    start: base,
+    final: f.startDate ? base + days * DAY : base,
+    mid: f.midReviewDate ? new Date(f.midReviewDate + "T00:00:00").getTime() : base + Math.floor(days / 2) * DAY,
+  };
   return (
     <Modal title="Tạo quy trình nhân sự" onClose={onClose} wide>
       <div className="grid grid-cols-2 gap-x-3">
@@ -3810,10 +3859,12 @@ function HrProcessForm({ onClose }) {
         <Field label="Tên nhân sự" req><input className={inputCls} value={f.personName} onChange={(e) => setF({ ...f, personName: e.target.value })} placeholder="VD: Nguyễn Văn A" /></Field>
         <Field label="Tài khoản (nếu đã có)"><UserSelect value={f.userId || null} onChange={(v) => setF({ ...f, userId: v || "" })} placeholder="— Chưa có tài khoản —" /></Field>
         <Field label="Ngày bắt đầu" req><input type="date" className={inputCls} value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} /></Field>
+        {f.type === "probation" && <Field label="Số ngày thử việc" req><select className={inputCls} value={f.probationDays} onChange={(e) => setF({ ...f, probationDays: e.target.value })}>{[30, 45, 60, 90].map((d) => <option key={d} value={d}>{d} ngày</option>)}</select></Field>}
+        {f.type === "probation" && <Field label="Ngày đánh giá giữa kỳ"><input type="date" className={inputCls} value={f.midReviewDate || ""} onChange={(e) => setF({ ...f, midReviewDate: e.target.value })} /><p className="mt-1 text-[10px] text-zinc-400">Để trống = tự tính giữa chặng. Kết thúc: {fmtDFull(iso(anchors.final))}</p></Field>}
       </div>
       <div className="rounded-lg bg-zinc-50 p-3 mb-3">
         <p className="mb-1 text-[11px] font-medium uppercase text-zinc-400">Sẽ tạo {tpl.items.length} task theo lịch{tpl.conf ? " · toàn bộ ở chế độ BẢO MẬT" : ""}</p>
-        <div className="max-h-36 overflow-y-auto">{tpl.items.map((it, i) => <p key={i} className="text-[12px] text-zinc-500 py-0.5">D{it[1] >= 0 ? "+" + it[1] : it[1]} · {it[0]}</p>)}</div>
+        <div className="max-h-36 overflow-y-auto">{tpl.items.map((it, i) => <p key={i} className="text-[12px] text-zinc-500 py-0.5">{f.startDate ? fmtDFull(iso(hrAnchorTime(it[1], anchors))) : hrOffsetLabel(it[1])} · {it[0]}</p>)}</div>
       </div>
       <div className="flex justify-end gap-2"><button className={btnSec} onClick={onClose}>Hủy</button><button className={btnPri} disabled={!f.personName.trim() || !f.deptId || !f.startDate} onClick={() => { const r = act.createHrProcess(f); toast(r.ok ? `Đã tạo quy trình · ${r.count} task` : r.msg, r.ok ? "ok" : "err"); onClose(); }}>Tạo quy trình</button></div>
     </Modal>

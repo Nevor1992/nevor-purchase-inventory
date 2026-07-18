@@ -35,10 +35,23 @@ returns boolean language sql security definer stable as $$
   select exists(select 1 from departments where id = p_dept_id and leader_id = auth.uid());
 $$;
 
--- Helper: does the current user have confidential access flag
-create or replace function has_confidential_access()
+-- Helper: is current user the CEO
+create or replace function is_ceo()
 returns boolean language sql security definer stable as $$
-  select coalesce((select confidential_access from users where id = auth.uid()), false);
+  select role = 'ceo' from users where id = auth.uid();
+$$;
+
+-- Helper: is current user the HR department leader
+create or replace function is_hr_leader()
+returns boolean language sql security definer stable as $$
+  select exists(select 1 from departments where id = 'hr' and leader_id = auth.uid());
+$$;
+
+-- Helper: does the current user have the (separate) HR-confidential access flag.
+-- Deliberately NOT the system-admin role — a technical admin has no HR data access.
+create or replace function has_hr_confidential_access()
+returns boolean language sql security definer stable as $$
+  select coalesce((select hr_confidential_access from users where id = auth.uid()), false);
 $$;
 
 -- Helper: is current user "involved" in a task (mirrors JS involved())
@@ -62,16 +75,25 @@ returns boolean language sql security definer stable as $$
             select 1 from projects p where p.id = t.project_id and p.owner_id = auth.uid()));
 $$;
 
+-- Helper: may the current user see the confidential task t (mirrors canSeeConfidential()):
+--   HR-dept task  → HR leader / CEO / hr_confidential_access flag (NOT system admin)
+--   non-HR task   → system managers (admin/ceo) only, not dept members
+create or replace function can_see_confidential(t tasks)
+returns boolean language sql security definer stable as $$
+  select task_involves_me(t)
+      or case when t.dept_id = 'hr'
+              then (is_hr_leader() or is_ceo() or has_hr_confidential_access())
+              else is_manager()
+         end;
+$$;
+
 -- Master task-visibility function — mirrors perms.view() in App.jsx exactly.
 create or replace function can_view_task(t tasks)
 returns boolean language sql security definer stable as $$
   select case
-    -- confidential gate applies even to deleted rows: deletion never widens access
-    when t.is_confidential and not (
-      task_involves_me(t)
-      or (t.dept_id = 'hr' and is_dept_leader('hr'))
-      or has_confidential_access()
-    ) then false
+    -- confidential gate applies even to deleted rows: deletion never widens access.
+    -- HR-dept confidential excludes the system admin (see can_see_confidential).
+    when t.is_confidential and not can_see_confidential(t) then false
     -- deleted → only managers (and confidential gate above already satisfied)
     when t.deleted then can_manage_task(t)
     -- confidential and passed the gate → visible
@@ -231,12 +253,20 @@ create policy "task_attachments: insert collaborators" on task_attachments for i
 create policy "requests: visibility" on requests for select using (
   case
     when deleted then is_manager()          -- deleted → managers only
-    when is_manager() then true             -- managers see everything non-deleted
-    -- direct parties always see it (any visibility, incl. PRIVATE)
+    -- direct parties always see it (any visibility, incl. confidential / PRIVATE)
     when from_user_id = auth.uid()
       or receiver_id = auth.uid()
       or handler_id = auth.uid()
-      or auth.uid() = any(authorized_sender_ids) then true
+      or auth.uid() = any(authorized_sender_ids)
+      or auth.uid() = any(allowed_viewer_ids) then true
+    -- confidential requests: CEO + both-dept leaders + HR access — NOT the system admin
+    when is_confidential then (
+      is_ceo()
+      or is_dept_leader(from_dept_id)
+      or is_dept_leader(to_dept_id)
+      or (to_dept_id = 'hr' and (is_hr_leader() or has_hr_confidential_access()))
+    )
+    when is_manager() then true             -- non-confidential: managers see everything
     when visibility = 'PRIVATE' then false
     when visibility = 'SENDER_DEPARTMENT' then (
       from_dept_id = (select dept_id from users where id = auth.uid())

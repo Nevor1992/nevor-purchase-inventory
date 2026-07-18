@@ -63,7 +63,9 @@ create table users (
   dept_id text references departments(id),
   brand_id text references brands(id),
   title text,
-  confidential_access boolean not null default false,
+  -- HR confidential access is deliberately separate from the system-admin role:
+  -- a technical admin does NOT automatically get to read HR personnel data.
+  hr_confidential_access boolean not null default false,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -193,6 +195,8 @@ create table requests (
   agreed_deadline date,
   reject_reason text,
   authorized_sender_ids uuid[] not null default '{}',
+  is_confidential boolean not null default false,
+  allowed_viewer_ids uuid[] not null default '{}',
   deleted boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

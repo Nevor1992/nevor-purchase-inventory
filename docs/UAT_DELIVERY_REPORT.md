@@ -33,6 +33,16 @@
 | 15 | Cross-dept deadline | Changing a linked task's deadline **silently overwrote** the request's agreed deadline — breaking the negotiated commitment | `changeDeadline` no longer overwrites a confirmed `agreedDeadline`; it keeps the agreed value, logs the proposed change, and notifies the sender to re-confirm. Unnegotiated requests still sync. |
 | 16 | Project scope | TaskForm's project dropdown listed **all** projects; "Add task" button in ProjectDetail always shown | Dropdown filtered by `canViewProject`; `canCreateTaskFor` now rejects attaching a task to a project outside the user's scope; "Add task" button gated by the same check. |
 
+### Round 3 — HR data protection & flexible probation
+
+| # | Area | Bug | Fix |
+|---|------|-----|-----|
+| 17 | **System admin ≠ HR data** | Admin had a blanket `confidentialAccess` flag → could read every confidential task incl. HR personnel files | New `canSeeConfidential`: HR-dept confidential is limited to the HR leader / CEO / users with the dedicated `hrConfidentialAccess` flag — the system-admin role is excluded. Non-HR confidential keeps the manager-only rule. Seed no longer grants admin the flag. Mirrored in RLS via `can_see_confidential()` / `has_hr_confidential_access()`. |
+| 18 | Confidential requests | Requests had visibility enum only — no way to mark an HR request (leave, records, policy) as confidential; whole sender/receiver dept could read it | Requests gained `isConfidential` + `allowedViewerIds`. `canViewRequest` gates confidential requests to CEO + both-dept leaders + HR access (not system admin) + explicit viewers. Request form auto-flags sensitive HR request types and offers a manual "confidential" toggle; drawer shows a lock badge. Mirrored in RLS. |
+| 19 | Rigid probation schedule | Probation tasks were hard-coded at D+30/55/58/60/61/62 — wrong for interns, 30-day, 90-day, part-time | Probation template now uses **anchors** (`start` / `mid` / `final`). HR enters probation length (30/45/60/90) and an optional mid-review date; every task deadline is computed per person. Anchors stored on the process record. |
+
+**Test coverage:** 44 unit tests pass (was 27). New suites cover the field-level `updateTask` guard, HR-confidential split, and confidential-request visibility. Probation date computation verified end-to-end in the browser.
+
 ---
 
 ## 2. Changed Files
