@@ -1799,10 +1799,7 @@ function Dashboard() {
 
   return (
     <div>
-      <div className="mb-5">
-        <h1 className="text-lg font-semibold text-zinc-900">{hello}, {me.name}</h1>
-        <p className="text-[13px] text-zinc-400">{fmtDFull(todayISO())} · {ROLE_LABELS[me.role]} · {deptById(db, me.deptId)?.name}</p>
-      </div>
+      <PageHeader title={`${hello}, ${me.name}`} desc={`${fmtDFull(todayISO())} · ${ROLE_LABELS[me.role]} · ${deptById(db, me.deptId)?.name}`} />
 
       {/* Pinned */}
       <div className="mb-4 rounded-xl border border-zinc-100 bg-white p-4">
@@ -1890,7 +1887,7 @@ function LeaderPanel({ visible }) {
       <div className="space-y-0.5">{items.slice(0, 5).map(render)}</div>
     </div>
   );
-  const TRow = (t) => <button key={t.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-zinc-50" onClick={() => openTask(t.id)}><span className="flex-1 truncate text-[12px] text-zinc-700">{t.isConfidential ? "(Công việc bảo mật)" : t.name}</span><span className="text-[10px] text-zinc-400">{userById(db, t.ownerId)?.name || "—"}</span><ChevronRight className="h-3 w-3 text-zinc-300" /></button>;
+  const TRow = (t) => <button key={t.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-zinc-50" onClick={() => openTask(t.id)}><span className="flex-1 truncate text-[12px] text-zinc-700">{t.isConfidential ? "(Công việc bảo mật)" : t.name}</span><span className="hidden sm:inline text-[10px] text-zinc-400">{userById(db, t.ownerId)?.name || "—"}</span>{t.deadline && <span className={`text-[10px] tabular-nums ${deadlineMeta(t).cls}`}>{deadlineMeta(t).label}</span>}<ChevronRight className="h-3 w-3 shrink-0 text-zinc-300" /></button>;
   const acEmpty = !review.length && !overdueNeed.length && !unassigned.length && !reqs.length && !dlPending.length && !blockers.length && !rework.length && !overloaded.length && !urgentSoon.length;
   return (
     <div className="mt-5">
@@ -1949,7 +1946,7 @@ function CeoPanel({ visible: allVisible }) {
   const AC = ({ items, label, tone, render }) => items.length === 0 ? null : (
     <div className="mb-2"><p className={`mb-1 text-[11px] font-semibold ${tone}`}>{label} · {items.length}</p><div className="space-y-0.5">{items.slice(0, 5).map(render)}</div></div>
   );
-  const TRow = (t) => <button key={t.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-zinc-50" onClick={() => openTask(t.id)}><span className="flex-1 truncate text-[12px] text-zinc-700">{t.isConfidential ? "(Công việc bảo mật)" : t.name}</span><span className="text-[10px] text-zinc-400">{userById(db, t.ownerId)?.name}</span><ChevronRight className="h-3 w-3 text-zinc-300" /></button>;
+  const TRow = (t) => <button key={t.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-zinc-50" onClick={() => openTask(t.id)}><span className="flex-1 truncate text-[12px] text-zinc-700">{t.isConfidential ? "(Công việc bảo mật)" : t.name}</span><span className="hidden sm:inline text-[10px] text-zinc-400">{userById(db, t.ownerId)?.name}</span>{t.deadline && <span className={`text-[10px] tabular-nums ${deadlineMeta(t).cls}`}>{deadlineMeta(t).label}</span>}<ChevronRight className="h-3 w-3 shrink-0 text-zinc-300" /></button>;
   const acEmpty = !ceoReview.length && !critBlockers.length && !urgentOver.length && !slowPrj.length && !crossStuck.length && !noOwnerBlockers.length;
   return (
     <div className="mt-1">
@@ -2395,6 +2392,31 @@ function RequestForm({ onClose }) {
     </Modal>
   );
 }
+/* Tiến trình yêu cầu — timeline dọc, dễ hiểu cho nhân viên (mục 18) */
+function RequestTimeline({ r }) {
+  const stages = ["Gửi yêu cầu", "Phòng nhận tiếp nhận", "Chốt deadline", "Đang xử lý", "Bàn giao kết quả", "Hoàn thành"];
+  const idx = { pending: 0, info: 0, deadline_proposed: 1, accepted: 2, processing: 3, delivered: 4, confirmed: 5, rejected: 0, cancelled: 0 }[r.status] ?? 0;
+  const terminal = r.status === "rejected" ? "Yêu cầu đã bị từ chối" : r.status === "cancelled" ? "Yêu cầu đã bị hủy" : null;
+  return (
+    <div className="mb-4 rounded-xl border border-zinc-200 p-3.5">
+      <p className="mb-2.5 text-[11px] font-medium uppercase tracking-wide text-zinc-400">Tiến trình yêu cầu</p>
+      <ol className="relative">
+        {stages.map((label, i) => {
+          const reached = i <= idx && !terminal;
+          const current = i === idx && !terminal && r.status !== "confirmed";
+          return (
+            <li key={i} className="relative flex gap-3 pb-3 last:pb-0">
+              {i < stages.length - 1 && <span className={`absolute left-[6px] top-3.5 h-full w-px ${i < idx && !terminal ? "bg-zinc-800" : "bg-zinc-200"}`} aria-hidden="true" />}
+              <span className={`relative z-10 mt-0.5 h-3 w-3 shrink-0 rounded-full border-2 ${reached ? "border-zinc-800 bg-zinc-800" : "border-zinc-300 bg-white"} ${current ? "ring-2 ring-zinc-900/15" : ""}`} />
+              <span className={`text-[12px] leading-tight ${reached ? "font-medium text-zinc-800" : "text-zinc-400"}`}>{label}{current && <span className="ml-1.5 text-[10px] font-normal text-zinc-400">· đang ở đây</span>}</span>
+            </li>
+          );
+        })}
+      </ol>
+      {terminal && <p className="mt-1 text-[12px] font-medium text-red-600">{terminal}</p>}
+    </div>
+  );
+}
 function RequestDrawer({ reqId, onClose }) {
   const { db, me, act, toast, openTask } = useApp();
   const r = db.requests.find((x) => x.id === reqId);
@@ -2492,6 +2514,7 @@ function RequestDrawer({ reqId, onClose }) {
           )}
           {r.status === "rejected" && <div className="mb-4 rounded-xl bg-red-50 border border-red-100 p-3 text-xs text-red-700"><b>Lý do từ chối:</b> {r.rejectReason}</div>}
 
+          <RequestTimeline r={r} />
           <div className="rounded-xl border border-zinc-100 px-4 py-2 mb-4">
             <Info label="Phòng gửi"><DeptTag id={r.fromDeptId} /> · <UserChip id={r.fromUserId} /></Info>
             <Info label="Phòng nhận"><DeptTag id={r.toDeptId} /></Info>
