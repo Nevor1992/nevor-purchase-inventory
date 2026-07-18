@@ -45,6 +45,34 @@ describe("perms.view", () => {
     const deletedTask = { ...db.tasks[0], deleted: true };
     expect(perms.view(db, admin, deletedTask)).toBe(true);
   });
+
+  it("HR confidential task: visible to HR leader, admin, ceo — hidden from other leaders", () => {
+    const hrTask = db.tasks.find((t) => t.isConfidential && t.deptId === "hr");
+    if (!hrTask) return;
+    const vy = user("vy");       // HR leader
+    const admin = user("admin"); // confidentialAccess
+    const ceo = user("ceo");     // confidentialAccess
+    const linh = user("linh");   // Content leader — not involved
+    expect(perms.view(db, vy, hrTask)).toBe(true);
+    expect(perms.view(db, admin, hrTask)).toBe(true);
+    expect(perms.view(db, ceo, hrTask)).toBe(true);
+    if (!hrTask.collaboratorIds.includes("linh") && hrTask.ownerId !== "linh") {
+      expect(perms.view(db, linh, hrTask)).toBe(false);
+    }
+  });
+
+  it("deleting a confidential task does not widen visibility", () => {
+    const linh = user("linh"); // Content dept leader
+    const confidentialContentTask = {
+      ...db.tasks[0], deptId: "content", isConfidential: true, deleted: true,
+      ownerId: "mai", creatorId: "mai", assignerId: null, approverId: null,
+      collaboratorIds: [], allowedViewerIds: [],
+    };
+    // linh manages content dept, but was never allowed to see this confidential task
+    expect(perms.view(db, linh, confidentialContentTask)).toBe(false);
+    // admin with confidentialAccess still sees it
+    expect(perms.view(db, user("admin"), confidentialContentTask)).toBe(true);
+  });
 });
 
 // ── 2. perms.canToggleChecklistItem ───────────────────────────────────────────

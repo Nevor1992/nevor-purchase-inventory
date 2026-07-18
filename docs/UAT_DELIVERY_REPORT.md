@@ -122,17 +122,17 @@ Run with: `npm test`
 
 | Suite | Tests | Status |
 |-------|-------|--------|
-| `perms.view` | 5 | — |
-| `perms.canToggleChecklistItem` | 4 | — |
-| `perms.changeDeadline` | 2 | — |
-| `canViewRequest` | 5 | — |
-| `isSenderAuthorized` | 2 | — |
-| `getEligibleApprovers` | 2 | — |
-| `perms.approve` | 2 | — |
-| `runScheduler` | 1 | — |
-| `canCreateTaskFor` | 2 | — |
+| `perms.view` | 5 | ✅ pass |
+| `perms.canToggleChecklistItem` | 4 | ✅ pass |
+| `perms.changeDeadline` | 2 | ✅ pass |
+| `canViewRequest` | 5 | ✅ pass |
+| `isSenderAuthorized` | 2 | ✅ pass |
+| `getEligibleApprovers` | 2 | ✅ pass |
+| `perms.approve` | 2 | ✅ pass |
+| `runScheduler` | 1 | ✅ pass |
+| `canCreateTaskFor` | 2 | ✅ pass |
 
-> Status will be filled in after CI run.
+**Total: 25/25 pass** (vitest run, local verification 2026-07-17)
 
 ---
 

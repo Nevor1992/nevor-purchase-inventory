@@ -109,7 +109,7 @@ const DEFAULT_RECEIVERS = { media: "dat", aff: "huy", cx: "nhung", rnd: "lan", p
 SEED_DEPTS.forEach((d) => { d.defaultReceiverId = d.leaderId ? null : DEFAULT_RECEIVERS[d.id] || null; });
 
 const SEED_USERS = [
-  { id: "ceo",   name: "Anh Tuấn",  role: "ceo",      deptId: "brand",   title: "CEO Novix" },
+  { id: "ceo",   name: "Anh Tuấn",  role: "ceo",      deptId: "brand",   title: "CEO Novix", confidentialAccess: true },
   { id: "admin", name: "Ngọc Vũ",   role: "admin",    deptId: "hr",      title: "Quản trị hệ thống", confidentialAccess: true },
   { id: "linh",  name: "Linh",      role: "leader",   deptId: "content", title: "Leader Content" },
   { id: "minh",  name: "Minh",      role: "leader",   deptId: "brand",   title: "Leader Growth Nevor" },
@@ -461,8 +461,10 @@ const canManage = (db, u, t) => isMgr(u) || isDeptLeader(db, u, t.deptId) || isP
 const perms = {
   view(db, u, t) {
     if (!u || !t) return false;
-    if (t.deleted) return canManage(db, u, t);
-    if (t.isConfidential) return involved(u, t) || (t.deptId === "hr" && isHrLeader(db, u)) || u.confidentialAccess === true;
+    /* task mật: gate bảo mật áp dụng cả khi đã xóa — xóa không được mở rộng quyền xem */
+    const confOk = !t.isConfidential || involved(u, t) || (t.deptId === "hr" && isHrLeader(db, u)) || u.confidentialAccess === true;
+    if (t.deleted) return canManage(db, u, t) && confOk;
+    if (t.isConfidential) return confOk;
     const vis = t.visibility || "department";
     if (vis === "private") return involved(u, t);
     if (isMgr(u)) return true;
