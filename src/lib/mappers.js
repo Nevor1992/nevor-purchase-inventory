@@ -12,6 +12,7 @@ const iso = (ms) => (ms ? new Date(ms).toISOString() : null);
 export const userFromRow = (r) => ({
   id: r.id, name: r.name, role: r.role, deptId: r.dept_id, brandId: r.brand_id,
   title: r.title, email: r.email, hrConfidentialAccess: r.hr_confidential_access === true,
+  isActive: r.is_active !== false,
 });
 
 export const deptFromRow = (r) => ({

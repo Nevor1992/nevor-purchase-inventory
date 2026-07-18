@@ -195,3 +195,15 @@ export async function adminCreateUser(payload) {
   if (!data?.ok) return { ok: false, msg: data?.msg || "Tạo tài khoản thất bại" };
   return { ok: true, userId: data.userId, user: data.user || null };
 }
+
+/* Vô hiệu hoá / kích hoạt lại / xoá tài khoản (Edge Function admin-set-user-status). */
+export async function adminSetUserStatus(userId, action) {
+  const { data, error } = await supabase.functions.invoke("admin-set-user-status", { body: { userId, action } });
+  if (error) {
+    let msg = error.message || "Không gọi được máy chủ";
+    try { const ctx = await error.context?.json?.(); if (ctx?.msg) msg = ctx.msg; } catch { /* ignore */ }
+    return { ok: false, msg };
+  }
+  if (!data?.ok) return { ok: false, msg: data?.msg || "Thao tác thất bại" };
+  return { ok: true, isActive: data.isActive, deleted: data.deleted };
+}

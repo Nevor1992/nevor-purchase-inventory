@@ -11,7 +11,7 @@ import { btnPri, btnSec, btnGhost, btnDanger, inputCls, cardCls, popoverCls, STA
 import { PageHeader, Skeleton, SkeletonRows, DeadlineChip, Dot, Tooltip, ErrorBoundary } from "./ui/primitives.jsx";
 import { SUPABASE_ENABLED, SUPABASE_CONFIG_ERROR } from "./lib/supabase.js";
 import { signIn, signOut, getSession, onAuthChange } from "./lib/auth.js";
-import { loadDb, syncChanges, subscribeRealtime, adminCreateUser, uploadAttachment, signedAttachmentUrl } from "./lib/db.js";
+import { loadDb, syncChanges, subscribeRealtime, adminCreateUser, adminSetUserStatus, uploadAttachment, signedAttachmentUrl } from "./lib/db.js";
 
 /* ============================================================
    NOVIX WORK — Quản lý công việc nội bộ v0.2.0-uat-prep
@@ -2756,7 +2756,14 @@ function AdminPage() {
   const [tab, setTab] = useState("users");
   const [roleModal, setRoleModal] = useState(null); // {userId, role, reason}
   const [addMember, setAddMember] = useState(false);
+  const [userAction, setUserAction] = useState(null); // {userId, name, action}
+  const [actBusy, setActBusy] = useState(false);
   if (!["admin", "ceo"].includes(me.role)) return <EmptyState icon={Settings} title="Chỉ Manager/Admin hoặc CEO truy cập được khu vực này" />;
+  const ACTION_META = {
+    disable: { title: "Vô hiệu hoá tài khoản", verb: "vô hiệu hoá", note: "Người này sẽ KHÔNG đăng nhập được nữa, nhưng dữ liệu & lịch sử vẫn giữ. Có thể kích hoạt lại bất cứ lúc nào.", btn: "Vô hiệu hoá", danger: false },
+    enable: { title: "Kích hoạt lại tài khoản", verb: "kích hoạt lại", note: "Người này sẽ đăng nhập lại được bình thường.", btn: "Kích hoạt lại", danger: false },
+    delete: { title: "Xoá tài khoản", verb: "xoá", note: "Xoá vĩnh viễn tài khoản. Chỉ xoá được nếu người này CHƯA có công việc/yêu cầu nào; nếu còn, hãy 'Vô hiệu hoá' để giữ lịch sử.", btn: "Xoá vĩnh viễn", danger: true },
+  };
   return (
     <div>
       <h1 className="mb-4 text-lg font-semibold text-zinc-900">Quản trị</h1>
@@ -2772,17 +2779,28 @@ function AdminPage() {
               : <span className="text-[11px] text-zinc-400">Thêm thành viên chỉ khả dụng ở bản Supabase</span>}
           </div>
         <div className="rounded-xl border border-zinc-100 bg-white overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
-            <thead className="border-b border-zinc-100 bg-zinc-50/60"><tr>{["Nhân sự", "Chức danh", "Phòng ban", "Vai trò"].map((h) => <th key={h} className="px-3 py-2 text-left text-[11px] font-medium uppercase text-zinc-400">{h}</th>)}</tr></thead>
+          <table className="w-full min-w-[860px] text-sm">
+            <thead className="border-b border-zinc-100 bg-zinc-50/60"><tr>{["Nhân sự", "Chức danh", "Phòng ban", "Vai trò", "Trạng thái", ""].map((h, i) => <th key={i} className="px-3 py-2 text-left text-[11px] font-medium uppercase text-zinc-400">{h}</th>)}</tr></thead>
             <tbody>
-              {db.users.map((u) => (
-                <tr key={u.id} className="border-b border-zinc-50 last:border-0">
+              {db.users.map((u) => {
+                const inactive = u.isActive === false;
+                const isSelf = u.id === meId;
+                const canManage = SUPABASE_ENABLED && !isSelf && (u.role !== "ceo" || me.role === "ceo");
+                return (
+                <tr key={u.id} className={`border-b border-zinc-50 last:border-0 ${inactive ? "opacity-55" : ""}`}>
                   <td className="px-3 py-2"><span className="inline-flex items-center gap-2"><Avatar id={u.id} size={7} /><span className="text-[13px] font-medium text-zinc-800">{u.name}</span></span></td>
                   <td className="px-3 py-2 text-[13px] text-zinc-500">{u.title}</td>
                   <td className="px-3 py-2"><select className="rounded-lg border border-zinc-200 px-2 py-1 text-xs" value={u.deptId} onChange={(e) => { act.adminUpdateUser(u.id, { deptId: e.target.value }); toast("Đã chuyển phòng ban"); }}>{db.depts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></td>
                   <td className="px-3 py-2"><select className="rounded-lg border border-zinc-200 px-2 py-1 text-xs" value={u.role} disabled={u.role === "ceo" && me.role !== "ceo"} onChange={(e) => setRoleModal({ userId: u.id, role: e.target.value, reason: "" })}>{Object.entries(ROLE_LABELS).filter(([k]) => k !== "ceo" || me.role === "ceo" || u.role === "ceo").map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></td>
+                  <td className="px-3 py-2">{inactive ? <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] text-red-600">Đã vô hiệu hoá</span> : <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-600">Đang hoạt động</span>}</td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    {canManage && (inactive
+                      ? <button className={btnGhost} onClick={() => setUserAction({ userId: u.id, name: u.name, action: "enable" })}>Kích hoạt lại</button>
+                      : <button className={btnGhost} onClick={() => setUserAction({ userId: u.id, name: u.name, action: "disable" })}>Vô hiệu hoá</button>)}
+                    {canManage && <button className="ml-1 rounded-lg px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-50" onClick={() => setUserAction({ userId: u.id, name: u.name, action: "delete" })}>Xoá</button>}
+                  </td>
                 </tr>
-              ))}
+              ); })}
             </tbody>
           </table>
         </div>
@@ -2878,6 +2896,22 @@ function AdminPage() {
         </div>
       )}
       {addMember && <AddMemberModal onClose={() => setAddMember(false)} />}
+      {userAction && (() => { const M = ACTION_META[userAction.action]; return (
+        <Modal title={M.title} onClose={() => !actBusy && setUserAction(null)}>
+          <p className="mb-2 text-[13px] text-zinc-600">Bạn muốn {M.verb} tài khoản <b>{userAction.name}</b>?</p>
+          <p className={`mb-3 rounded-lg px-3 py-2 text-xs ${M.danger ? "bg-red-50 border border-red-100 text-red-600" : "bg-zinc-50 text-zinc-500"}`}>{M.note}</p>
+          <div className="flex justify-end gap-2">
+            <button className={btnSec} disabled={actBusy} onClick={() => setUserAction(null)}>Hủy</button>
+            <button className={M.danger ? btnDanger : btnPri} disabled={actBusy} onClick={async () => {
+              setActBusy(true);
+              const r = await act.adminSetUserStatus(userAction.userId, userAction.action);
+              setActBusy(false);
+              toast(r.ok ? `Đã ${M.verb} ${userAction.name}` : r.msg, r.ok ? "ok" : "err");
+              if (r.ok) setUserAction(null);
+            }}>{actBusy ? "Đang xử lý…" : M.btn}</button>
+          </div>
+        </Modal>
+      ); })()}
     </div>
   );
 }
@@ -3833,9 +3867,20 @@ export default function App() {
       if (!r.ok) return r;
       /* users không nằm trong sync engine → chỉ cần chèn vào state, khỏi tải lại toàn bộ */
       if (r.user) {
-        const m = { id: r.user.id, name: r.user.name, role: r.user.role, deptId: r.user.dept_id, brandId: r.user.brand_id, title: r.user.title, email: r.user.email, hrConfidentialAccess: r.user.hr_confidential_access === true };
+        const m = { id: r.user.id, name: r.user.name, role: r.user.role, deptId: r.user.dept_id, brandId: r.user.brand_id, title: r.user.title, email: r.user.email, hrConfidentialAccess: r.user.hr_confidential_access === true, isActive: true };
         setDb((prev) => prev.users.some((u) => u.id === m.id) ? prev : { ...prev, users: [...prev.users, m] });
       }
+      return { ok: true };
+    },
+    /* Vô hiệu hoá / kích hoạt lại / xoá tài khoản (chỉ Admin/CEO). */
+    adminSetUserStatus: async (userId, action) => {
+      if (!["admin", "ceo"].includes(me.role)) return { ok: false, msg: "Chỉ Admin/CEO được thao tác" };
+      if (!SUPABASE_ENABLED) return { ok: false, msg: "Chức năng này chỉ dùng ở bản Supabase" };
+      const r = await adminSetUserStatus(userId, action);
+      if (!r.ok) return r;
+      setDb((prev) => r.deleted
+        ? { ...prev, users: prev.users.filter((u) => u.id !== userId) }
+        : { ...prev, users: prev.users.map((u) => u.id === userId ? { ...u, isActive: r.isActive } : u) });
       return { ok: true };
     },
   };
