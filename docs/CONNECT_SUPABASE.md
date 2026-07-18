@@ -21,6 +21,8 @@ Cờ điều khiển: `SUPABASE_ENABLED` trong `src/lib/supabase.js` (tự bật
    - `20260101000002_app_tables.sql` — documents / hr_processes / saved_filters + trigger auth→users
    - `20260101000003_ui_columns.sql` — cột bổ sung cho UI
    - `20260101000004_rls_nullsafe.sql` — **bắt buộc**: vá lỗ hổng lộ task bảo mật (NULL leak) + sửa quyền tick checklist
+   - `20260101000005_lock_anon.sql` — **bắt buộc**: khoá anon khỏi dữ liệu (chống lộ email/task company)
+   - `20260101000006_users_priv_guard.sql` — **bắt buộc**: chặn nhân viên tự nâng quyền admin qua PostgREST
    *(hoặc dùng Supabase CLI: `supabase db push`)*
 4. Tạo **Storage bucket** tên `attachments` (private) cho file đính kèm.
 5. Tạo user admin đầu tiên: **Authentication → Add user** (email + password), rồi trong SQL Editor thêm dòng vào `public.users` với **cùng `id`** của auth user đó (role `admin`, dept `hr`…).

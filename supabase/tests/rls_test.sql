@@ -224,6 +224,10 @@ begin
   -- ---- Users: tự sửa hồ sơ mình, không sửa người khác ----
   call t('users: tự sửa mình → được',               run_write(mai, $q$update users set name=name where email='mai@novix.vn'$q$), 1::bigint);
   call t('users: sửa người khác → 0 dòng',          run_write(mai, $q$update users set name=name where email='linh@novix.vn'$q$), 0::bigint);
+  call t('users: tự nâng role admin → BỊ CHẶN',     run_denied(mai, $q$update users set role='admin' where id='00000000-0000-0000-0000-000000000004'$q$), true);
+  call t('users: tự cấp quyền HR → BỊ CHẶN',        run_denied(mai, $q$update users set hr_confidential_access=true where id='00000000-0000-0000-0000-000000000004'$q$), true);
+  call t('users: admin đổi role người khác → được', run_write(admin_, $q$update users set role='leader' where email='an@novix.vn'$q$), 1::bigint);
+  call t('users: admin hoàn tác role → được',       run_write(admin_, $q$update users set role='employee' where email='an@novix.vn'$q$), 1::bigint);
 
   -- ---- Audit log: bất biến, chỉ manager đọc ----
   call t('audit: admin đọc được',                   run_count(admin_, $q$select count(*) from audit_log$q$), 1::bigint);
