@@ -1004,13 +1004,11 @@ function TaskDrawer({ taskId, onClose }) {
               {t.checklist.map((c) => {
                 const canToggleItem = perms.canToggleChecklistItem(db, me, t, c);
                 return (
-                <div key={c.id} className="group flex items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-zinc-50">
-                  <input type="checkbox" checked={c.done} disabled={!canToggleItem} onChange={() => act.toggleCheck(t.id, c.id)} className="mt-0.5 h-4 w-4 rounded border-zinc-300 accent-zinc-800" title={!canToggleItem && c.ownerId && c.ownerId !== me.id ? "Checklist này được giao cho người khác" : ""} />
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-[13px] ${c.done ? "text-zinc-400 line-through" : "text-zinc-700"}`}>{c.text}</p>
-                    <p className="text-[11px] text-zinc-400 flex gap-2">{c.ownerId && <span>{userById(db, c.ownerId)?.name}</span>}{c.deadline && <span>hạn {fmtD(c.deadline)}</span>}</p>
-                  </div>
-                  {canCkManage && <button className="opacity-0 group-hover:opacity-100 text-zinc-300 hover:text-red-500" onClick={() => act.delCheck(t.id, c.id)}><X className="h-3.5 w-3.5" /></button>}
+                <div key={c.id} className="group flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-zinc-50">
+                  <input type="checkbox" checked={c.done} disabled={!canToggleItem} onChange={() => act.toggleCheck(t.id, c.id)} className="h-[18px] w-[18px] shrink-0 rounded border-zinc-300 accent-zinc-800 disabled:cursor-not-allowed disabled:opacity-50" title={!canToggleItem && c.ownerId && c.ownerId !== me.id ? "Checklist này được giao cho người khác" : ""} />
+                  <p className={`flex-1 min-w-0 text-[13px] ${c.done ? "text-zinc-400 line-through" : "text-zinc-700"}`}>{c.text}{c.deadline && <span className="ml-2 text-[11px] text-zinc-400">· hạn {fmtD(c.deadline)}</span>}</p>
+                  {c.ownerId && <span className="shrink-0 text-[11px] font-medium text-zinc-500">{userById(db, c.ownerId)?.name}</span>}
+                  {canCkManage && <button className="shrink-0 opacity-0 group-hover:opacity-100 text-zinc-300 hover:text-red-500" onClick={() => act.delCheck(t.id, c.id)} aria-label="Xóa mục checklist"><X className="h-3.5 w-3.5" /></button>}
                 </div>
                 );
               })}
@@ -1201,7 +1199,7 @@ function ActualOutputBox({ t }) {
   const a = t.actual || { summary: "", links: [], note: "", submittedAt: null };
   const filled = a.summary?.trim() && (a.links.length > 0 || t.attachments.length > 0 || t.type === "personal");
   return (
-    <div className={`mb-4 rounded-xl border p-3 ${filled ? "border-emerald-100 bg-emerald-50/40" : "border-amber-100 bg-amber-50/40"}`}>
+    <div className={`mb-4 rounded-xl border p-3 ${filled ? "border-emerald-100 bg-emerald-50/40" : "border-zinc-200 bg-zinc-50/60"}`}>
       <div className="flex items-center justify-between mb-1.5">
         <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Kết quả thực tế (khi bàn giao)</p>
         {a.submittedAt && <span className="text-[10px] text-zinc-400">gửi {fmtDT(a.submittedAt)}</span>}
@@ -1510,7 +1508,7 @@ function TaskTable({ tasks }) {
                 <td className="px-3 py-2.5"><span className="inline-flex items-center gap-1 flex-wrap"><DeptTag id={t.deptId} /><BrandChip id={t.brandId} /></span></td>
                 <td className="px-3 py-2.5"><StatusPill s={t.status} /></td>
                 <td className="px-3 py-2.5"><PriorityPill p={t.priority} /></td>
-                <td className="px-3 py-2.5"><DeadlineBadge t={t} /></td>
+                <td className="px-3 py-2.5"><DeadlineChip date={t.deadline} done={t.status === "done"} /></td>
                 <td className="px-3 py-2.5 w-24"><div className="flex items-center gap-1.5"><ProgressBar v={t.progress} /><span className="text-[11px] text-zinc-400 w-8">{t.progress}%</span></div></td>
                 <td className="px-3 py-2.5">{t.approverId ? <Avatar id={t.approverId} size={6} /> : <span className="text-zinc-200 text-xs">—</span>}</td>
               </tr>
@@ -2843,7 +2841,7 @@ function MyTasksPage() {
   };
   return (
     <div>
-      <h1 className="mb-4 text-lg font-semibold text-zinc-900">Công việc của tôi</h1>
+      <PageHeader title="Công việc của tôi" desc="Việc bạn phụ trách, phối hợp, đã giao và cần duyệt." />
       <div className="mb-3 flex rounded-lg bg-zinc-100 p-0.5 w-fit">
         {[["own", `Tôi phụ trách · ${sets.own.filter((t) => t.status !== "done").length}`], ["collab", `Tôi phối hợp · ${sets.collab.filter((t) => t.status !== "done").length}`], ["given", `Tôi đã giao · ${sets.given.filter((t) => t.status !== "done").length}`], ["approve", `Tôi duyệt · ${sets.approve.filter((t) => t.status === "review").length}`]].map(([k, lb]) => (
           <button key={k} onClick={() => setTab(k)} className={`rounded-md px-3 py-1.5 text-xs font-medium ${tab === k ? "bg-white shadow-sm text-zinc-800" : "text-zinc-500"}`}>{lb}</button>
