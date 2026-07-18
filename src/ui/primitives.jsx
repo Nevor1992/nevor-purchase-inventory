@@ -2,6 +2,29 @@
    NovixWork — light, reusable UI primitives (no app/business logic inside).
    ============================================================================ */
 import React from "react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
+
+/* Error boundary — shows a friendly retry state instead of a white screen.
+   Wrap per-page (key={page}) so navigating away clears the error. */
+export class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex min-h-[50vh] flex-col items-center justify-center p-8 text-center">
+          <div className="mb-3 rounded-full bg-red-50 p-3"><AlertTriangle className="h-6 w-6 text-red-400" /></div>
+          <p className="text-[15px] font-semibold text-zinc-800">Không thể hiển thị nội dung này</p>
+          <p className="mt-1 max-w-sm text-[13px] text-zinc-500">Đã có lỗi khi tải màn hình. Bạn thử lại hoặc chuyển sang mục khác.</p>
+          <button onClick={() => this.setState({ error: null })} className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/30">
+            <RefreshCw className="h-4 w-4" />Thử lại
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 /* Consistent page header: title + short description + right-aligned actions. */
 export function PageHeader({ title, desc, actions, children }) {

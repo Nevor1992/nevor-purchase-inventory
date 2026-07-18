@@ -8,7 +8,7 @@ import {
   FileText, ExternalLink, Repeat, Trash2, PinOff, CornerDownRight, Star, Save, Lock
 } from "lucide-react";
 import { btnPri, btnSec, btnGhost, btnDanger, inputCls, cardCls, popoverCls, STATUS_TONE, PRIORITY_TONE } from "./ui/tokens.js";
-import { PageHeader, Skeleton, SkeletonRows, DeadlineChip, Dot, Tooltip } from "./ui/primitives.jsx";
+import { PageHeader, Skeleton, SkeletonRows, DeadlineChip, Dot, Tooltip, ErrorBoundary } from "./ui/primitives.jsx";
 
 /* ============================================================
    NOVIX WORK — Quản lý công việc nội bộ v0.2.0-uat-prep
@@ -733,7 +733,7 @@ const ReqPill = ({ s }) => <span className={`inline-flex rounded-full px-2 py-0.
 const BrandChip = ({ id }) => id ? <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap ${BRANDS[id]?.chip || ""}`}>{BRANDS[id]?.label}</span> : null;
 const deptBrand = (db, deptId) => deptById(db, deptId)?.brandId || null;
 const DeptTag = ({ id }) => { const { db } = useApp(); const d = deptById(db, id); return d ? <span className="inline-flex rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-600 whitespace-nowrap">{d.name}</span> : null; };
-const DeadlineBadge = ({ t }) => { const m = deadlineMeta(t); return <span className={`text-xs whitespace-nowrap ${m.cls}`}>{t.deadline && t.status !== "done" && daysLeft(t.deadline) > 3 ? m.label : (t.deadline ? `${fmtD(t.deadline)} · ${m.label}` : m.label)}</span>; };
+const DeadlineBadge = ({ t }) => { const m = deadlineMeta(t); return <span className={`shrink-0 text-xs whitespace-nowrap ${m.cls}`}>{t.deadline && t.status !== "done" && daysLeft(t.deadline) > 3 ? m.label : (t.deadline ? `${fmtD(t.deadline)} · ${m.label}` : m.label)}</span>; };
 const ProgressBar = ({ v, cls = "bg-zinc-800" }) => (
   <div className="h-1.5 w-full rounded-full bg-zinc-100 overflow-hidden"><div className={`h-full rounded-full ${cls} transition-all`} style={{ width: `${v || 0}%` }} /></div>
 );
@@ -1770,8 +1770,8 @@ function MiniTaskList({ title, tasks, empty, accent }) {
           {tasks.slice(0, 6).map((t) => (
             <button key={t.id} onClick={() => openTask(t.id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-zinc-50">
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUSES[t.status].dot}`} />
-              <span className="flex-1 truncate text-[13px] text-zinc-700">{t.name}</span>
-              {t.ownerId && <Avatar id={t.ownerId} size={6} />}
+              <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-700">{t.name}</span>
+              {t.ownerId && <span className="shrink-0"><Avatar id={t.ownerId} size={6} /></span>}
               <DeadlineBadge t={t} />
             </button>
           ))}
@@ -1817,7 +1817,7 @@ function Dashboard() {
             <StatCard label="Quá hạn" value={over.length} tone={over.length ? "text-red-600" : "text-zinc-900"} />
             <StatCard label="Chờ tôi duyệt" value={myReview.length} tone={myReview.length ? "text-violet-600" : "text-zinc-900"} onClick={() => nav("approvals")} />
           </div>
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <MiniTaskList title="Việc cần làm hôm nay" tasks={[...todayT, ...over]} empty="Hôm nay không có deadline nào. Một ngày dễ thở." />
             <MiniTaskList title="Việc sắp đến hạn" tasks={soon} />
             <MiniTaskList title="Việc cần cập nhật (bị yêu cầu sửa)" tasks={needUpdate} />
@@ -1912,7 +1912,7 @@ function LeaderPanel({ visible }) {
         <StatCard label="Chờ tôi duyệt" value={review.length} tone="text-violet-600" onClick={() => nav("approvals")} />
         <StatCard label="Chưa có phụ trách" value={unassigned.length} tone={unassigned.length ? "text-amber-600" : "text-zinc-900"} />
       </div>
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <MiniTaskList title="Deadline quan trọng 7 ngày tới" tasks={week} />
         <div className="rounded-xl border border-zinc-100 bg-white p-4">
           <p className="mb-2.5 text-[13px] font-semibold text-zinc-800">Yêu cầu phối hợp chờ xác nhận <span className="text-zinc-300 font-normal">· {reqs.length}</span></p>
@@ -1974,12 +1974,12 @@ function CeoPanel({ visible: allVisible }) {
         <StatCard label="Chờ CEO duyệt" value={ceoReview.length} tone="text-violet-600" onClick={() => nav("approvals")} />
         <StatCard label="Yêu cầu liên phòng ban chưa thông" value={crossStuck.length} tone={crossStuck.length ? "text-amber-600" : "text-zinc-900"} onClick={() => nav("requests")} />
       </div>
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <MiniTaskList title="Chờ CEO duyệt / quyết định" tasks={ceoReview} empty="Không có gì chờ quyết định. Hiếm đấy." />
         <MiniTaskList title="Quá hạn nghiêm trọng" tasks={overHigh} />
         <div className="rounded-xl border border-zinc-100 bg-white p-4 lg:col-span-2">
           <p className="mb-3 text-[13px] font-semibold text-zinc-800">Tiến độ dự án trọng điểm</p>
-          <div className="grid gap-2.5 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
             {keyPrj.map((p) => {
               const pts = visible.filter((t) => t.projectId === p.id);
               const done = pts.filter((t) => t.status === "done").length;
@@ -2015,7 +2015,7 @@ function DepartmentsPage() {
       {groups.map(([b, label]) => (
       <div key={label} className="mb-5">
       <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">{b ? <BrandChip id={b} /> : null}{label}</p>
-      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         {db.depts.filter((d) => (d.brandId || null) === b).map((d) => {
           const members = db.users.filter((u) => u.deptId === d.id);
           const tasks = db.tasks.filter((t) => !t.deleted && t.deptId === d.id && t.status !== "done");
@@ -2068,7 +2068,7 @@ function DeptDetail({ id }) {
             <StatCard label="Chờ duyệt" value={tasks.filter((t) => t.status === "review").length} tone="text-violet-600" />
             <StatCard label="Tạm dừng" value={tasks.filter((t) => t.status === "paused").length} />
           </div>
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <div className="rounded-xl border border-zinc-100 bg-white p-4"><p className="mb-2.5 text-[13px] font-semibold text-zinc-800">Thành viên</p>
               {db.users.filter((u) => u.deptId === id).map((u) => <div key={u.id} className="flex items-center gap-2.5 py-1.5"><Avatar id={u.id} size={7} /><div><p className="text-[13px] font-medium text-zinc-700">{u.name} {u.id === d.leaderId && <span className="ml-1 rounded bg-zinc-900 px-1.5 py-0.5 text-[9px] text-white">LEADER</span>}</p><p className="text-[11px] text-zinc-400">{u.title}</p></div></div>)}
             </div>
@@ -2095,7 +2095,7 @@ function ProjectsPage() {
   return (
     <div>
       <PageHeader title="Dự án" desc="Mục tiêu liên phòng ban — tiến độ theo trọng số công việc." actions={canCreate && <button className={btnPri} onClick={() => setCreating(true)}><Plus className="h-4 w-4" />Tạo dự án</button>} />
-      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         {db.projects.filter((p) => !p.deleted).map((p) => {
           const pts = db.tasks.filter((t) => !t.deleted && t.projectId === p.id);
           const totalW = pts.reduce((s, t) => s + (EFFORT_W[t.effort] ?? 1), 0);
@@ -2201,7 +2201,7 @@ function ProjectDetail({ id }) {
         {canAddTask && <button className={`${btnGhost} ml-auto mb-1`} onClick={() => setCreating(true)}><Plus className="h-3.5 w-3.5" />Thêm task</button>}
       </div>
       {tab === "overview" && (
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <div className="rounded-xl border border-zinc-100 bg-white p-4 space-y-2 text-[13px]">
             <p><span className="text-zinc-400">Phụ trách:</span> <UserChip id={p.ownerId} /></p>
             <p><span className="text-zinc-400">Theo dõi:</span> <AvatarGroup ids={p.watcherIds} /></p>
@@ -2882,7 +2882,7 @@ function MyTasksPage() {
   );
 }
 
-const FontLoad = () => <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap'); *{-webkit-font-smoothing:antialiased;} ::-webkit-scrollbar{height:8px;width:8px;} ::-webkit-scrollbar-thumb{background:#e4e4e7;border-radius:8px;}`}</style>;
+const FontLoad = () => <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap'); *{-webkit-font-smoothing:antialiased;} ::-webkit-scrollbar{height:8px;width:8px;} ::-webkit-scrollbar-thumb{background:#e4e4e7;border-radius:8px;} .truncate{min-width:0;} html,body{overflow-x:hidden;}`}</style>;
 
 function LoginScreen({ onLogin }) {
   const demo = [
@@ -3009,8 +3009,8 @@ function MobileSidebar({ page, nav }) {
     <nav className="p-3">
       <div className="mb-3 flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-zinc-900 text-[11px] font-bold text-white">NW</span><span className="text-sm font-bold">NOVIX WORK</span></div>
       {items.map(([k, lb, Ic, badge]) => (
-        <button key={k} onClick={() => nav(k)} className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm ${page.name === k ? "bg-zinc-900 text-white" : "text-zinc-600 hover:bg-zinc-50"}`}>
-          <Ic className="h-4 w-4" />{lb}{badge > 0 && <span className="ml-auto rounded-full bg-red-500 px-1.5 text-[10px] text-white">{badge}</span>}
+        <button key={k} onClick={() => nav(k)} aria-current={page.name === k ? "page" : undefined} className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm ${page.name === k ? "bg-zinc-100 font-medium text-zinc-900" : "text-zinc-600 hover:bg-zinc-50"}`}>
+          <Ic className="h-[18px] w-[18px]" />{lb}{badge > 0 && <span className="ml-auto rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-600">{badge}</span>}
         </button>
       ))}
     </nav>
@@ -3024,24 +3024,24 @@ function Topbar({ onCreate, onLogout, onMobileNav }) {
   const unread = db.notifs.filter((n) => n.userId === me.id && !n.read).length;
   return (
     <header className="sticky top-0 z-30 flex items-center gap-2 sm:gap-3 border-b border-zinc-100 bg-white/90 px-3 sm:px-4 py-2.5 backdrop-blur">
-      <button className="md:hidden rounded-lg p-2 hover:bg-zinc-100 text-zinc-600" onClick={onMobileNav}><LayoutList className="h-4.5 w-4.5 h-5 w-5" /></button>
-      <div className="relative flex-1 max-w-md">
+      <button className="md:hidden shrink-0 rounded-lg p-2 hover:bg-zinc-100 text-zinc-600" onClick={onMobileNav} aria-label="Mở menu điều hướng"><LayoutList className="h-5 w-5" /></button>
+      <div className="relative min-w-0 flex-1 max-w-md">
         <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-300" />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm công việc, dự án, yêu cầu, tài liệu, nhân sự…"
-          className="w-full rounded-xl border border-zinc-100 bg-zinc-50 pl-9 pr-8 py-2 text-[13px] focus:outline-none focus:border-zinc-300 focus:bg-white" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm công việc, dự án, yêu cầu…" aria-label="Tìm kiếm"
+          className="w-full min-w-0 rounded-xl border border-zinc-100 bg-zinc-50 pl-9 pr-8 py-2 text-[13px] focus:outline-none focus:border-zinc-300 focus:bg-white" />
         {q && <button className="absolute right-2.5 top-2.5 text-zinc-300 hover:text-zinc-600" onClick={() => setQ("")}><X className="h-4 w-4" /></button>}
         {q.trim().length >= 2 && <SearchOverlay q={q.trim()} onClose={() => setQ("")} />}
       </div>
-      <button className={btnPri} onClick={onCreate}><Plus className="h-4 w-4" />Tạo công việc</button>
-      <div className="relative">
-        <button className="relative rounded-xl p-2 hover:bg-zinc-50 text-zinc-500" onClick={() => { setShowNotif(!showNotif); setShowMenu(false); }}>
+      <button className={`${btnPri} shrink-0`} onClick={onCreate} aria-label="Tạo công việc"><Plus className="h-4 w-4" /><span className="hidden sm:inline">Tạo công việc</span></button>
+      <div className="relative shrink-0">
+        <button className="relative rounded-xl p-2 hover:bg-zinc-50 text-zinc-500" onClick={() => { setShowNotif(!showNotif); setShowMenu(false); }} aria-label="Thông báo">
           <Bell className="h-[18px] w-[18px]" />
           {unread > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">{unread}</span>}
         </button>
         {showNotif && <NotifPanel onClose={() => setShowNotif(false)} />}
       </div>
-      <div className="relative">
-        <button className="flex items-center gap-2 rounded-xl px-1.5 py-1 hover:bg-zinc-50" onClick={() => { setShowMenu(!showMenu); setShowNotif(false); }}>
+      <div className="relative shrink-0">
+        <button className="flex items-center gap-2 rounded-xl px-1.5 py-1 hover:bg-zinc-50" onClick={() => { setShowMenu(!showMenu); setShowNotif(false); }} aria-label="Tài khoản">
           <Avatar id={me.id} size={8} /><ChevronDown className="h-3.5 w-3.5 text-zinc-400" />
         </button>
         {showMenu && (
@@ -3620,7 +3620,8 @@ export default function App() {
         )}
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar onMobileNav={() => setMobileNav(true)} onCreate={() => setCreating(true)} onLogout={() => { setMeId(null); setTaskId(null); setReqId(null); }} />
-          <main className="flex-1 px-3 sm:px-5 py-4 sm:py-5 max-w-[1200px] w-full mx-auto">
+          <main className="flex-1 min-w-0 px-3 sm:px-5 py-4 sm:py-5 max-w-[1200px] w-full mx-auto">
+            <ErrorBoundary key={page.name + (page.params?.id || "")}>
             {page.name === "dashboard" && <Dashboard />}
             {page.name === "myTasks" && <MyTasksPage />}
             {page.name === "hr" && <HRPage />}
@@ -3633,6 +3634,7 @@ export default function App() {
             {page.name === "calendar" && <CalendarPage />}
             {page.name === "documents" && <DocumentsPage />}
             {page.name === "admin" && <AdminPage />}
+            </ErrorBoundary>
           </main>
         </div>
       </div>
@@ -3829,7 +3831,7 @@ function HRPage() {
       )}
 
       {["onboarding", "probation", "training", "offboarding"].includes(tab) && (
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {listFor(tab).length === 0 && <EmptyState icon={Users} title={`Chưa có quy trình ${HR_TEMPLATES[tab].label}`} hint="Bấm Tạo quy trình — task sẽ tự sinh theo template với deadline offset." />}
           {listFor(tab).map((p) => <ProcCard key={p.id} p={p} />)}
         </div>
