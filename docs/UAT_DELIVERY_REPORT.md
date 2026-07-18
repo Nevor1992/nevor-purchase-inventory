@@ -23,6 +23,16 @@
 | 10 | TaskDrawer access | TaskDrawer rendered content before permission check | Early return with `UnauthorizedState` if `perms.view` fails |
 | 11 | RequestDrawer access | No permission guard before rendering | Early return with `UnauthorizedState` if `canViewRequest` fails |
 
+### Round 2 — service-layer & business-logic hardening (P0)
+
+| # | Area | Bug | Fix |
+|---|------|-----|-----|
+| 12 | **`updateTask` backdoor** | Generic `updateTask(id, patch)` merged any field with **no permission check** — a direct call could reassign owner, flip `isConfidential`, change approver, etc. | New `canApplyTaskPatch` maps every field → its `perms.*` gate; system fields (`status`/`deadline`/`locked`…) are forbidden and must go through their dedicated action. `updateTask` now validates before mutating and toasts on denial. |
+| 13 | Request rights too broad | UI `isSender = fromUserId===me \|\| me.deptId===fromDeptId` gave sender actions (confirm/resend/cancel) to the **whole sender department** | UI `isSender` now uses `isSenderAuthorized` (creator / sender-dept leader / authorized sender). `confirm` and `resend` actions gained the same server-side guard (`cancel` already had it). |
+| 14 | Deliver bypass | `reqAction.deliver` only checked `actual.summary` and had **no authorization** | Now requires the full actual output (summary **and** link/attachment, same standard as task submit-for-review) **and** restricts delivery to the handler / receiving-dept leader. |
+| 15 | Cross-dept deadline | Changing a linked task's deadline **silently overwrote** the request's agreed deadline — breaking the negotiated commitment | `changeDeadline` no longer overwrites a confirmed `agreedDeadline`; it keeps the agreed value, logs the proposed change, and notifies the sender to re-confirm. Unnegotiated requests still sync. |
+| 16 | Project scope | TaskForm's project dropdown listed **all** projects; "Add task" button in ProjectDetail always shown | Dropdown filtered by `canViewProject`; `canCreateTaskFor` now rejects attaching a task to a project outside the user's scope; "Add task" button gated by the same check. |
+
 ---
 
 ## 2. Changed Files

@@ -501,11 +501,47 @@ const perms = {
   changeVisibility(db, u, t) { return t.creatorId === u.id || canManage(db, u, t); },
 };
 
+/* ---- Quyền cập nhật task theo TỪNG trường — updateTask không còn là cửa hậu ----
+   Mỗi field chỉ được sửa nếu perms tương ứng cho phép. Các trường nhạy cảm
+   (status/deadline/locked…) phải đi qua action riêng, cấm sửa trực tiếp. */
+const TASK_FIELD_PERM = {
+  name: "editContent", desc: "editContent", deliverable: "editContent", acceptance: "editContent",
+  reportLink: "editContent", driveLink: "editContent", tags: "editContent",
+  brandId: "editContent", start: "editContent", effort: "editContent", priority: "editContent",
+  collaboratorIds: "editContent",
+  ownerId: "changeAssignee",
+  approverId: "changeApprover",
+  visibility: "changeVisibility", isConfidential: "changeVisibility", confidentialReason: "changeVisibility",
+  progress: "updateProgress",
+};
+/* Trường buộc phải đổi qua action chuyên biệt (changeStatus/changeDeadline/approve…) */
+const TASK_FIELD_FORBIDDEN = new Set([
+  "id", "code", "createdAt", "logs", "comments", "checklist", "attachments",
+  "status", "deadline", "deadlineConfirmed", "deadlineHistory",
+  "locked", "deleted", "approvedAt", "completedAt", "confirmedById",
+  "actual", "ackedAt", "requiresAck", "revisionCount", "revisionNote", "creatorId", "assignerId",
+]);
+/* Trả về {ok} nếu user được phép áp toàn bộ patch lên task; nếu không, {ok:false, msg} */
+const canApplyTaskPatch = (db, u, t, patch) => {
+  for (const k of Object.keys(patch)) {
+    if (TASK_FIELD_FORBIDDEN.has(k)) return { ok: false, msg: "Trường này phải đổi qua thao tác riêng, không sửa trực tiếp" };
+    const permName = TASK_FIELD_PERM[k];
+    if (!permName) return { ok: false, msg: `Trường "${k}" không được phép cập nhật` };
+    if (!perms[permName](db, u, t)) return { ok: false, msg: "Bạn không có quyền sửa trường này" };
+  }
+  return { ok: true };
+};
+
 /* ---- quyền tạo & giao task: employee chỉ tạo cho mình; leader trong phòng; project owner trong dự án; liên phòng ban đi qua Yêu cầu phối hợp ---- */
 const canCreateTaskFor = (db, u, f) => {
   if (isMgr(u)) return { ok: true };
   const p = f.projectId ? projById(db, f.projectId) : null;
-  if (p && p.ownerId === u.id) return p.deptIds.includes(f.deptId) ? { ok: true } : { ok: false, msg: "Phòng ban nằm ngoài phạm vi dự án" };
+  /* Gắn task vào dự án: phải thuộc phạm vi dự án (owner / phòng nằm trong dự án) — không cho gắn tùy tiện */
+  if (p) {
+    if (!canViewProject(db, u, p)) return { ok: false, msg: "Bạn không thuộc phạm vi dự án này" };
+    if (p.ownerId === u.id) return p.deptIds.includes(f.deptId) ? { ok: true } : { ok: false, msg: "Phòng ban nằm ngoài phạm vi dự án" };
+    if (!p.deptIds.includes(f.deptId)) return { ok: false, msg: "Phòng ban nằm ngoài phạm vi dự án" };
+  }
   if (u.role === "leader") {
     if (f.deptId !== u.deptId) return { ok: false, msg: "Leader chỉ tạo task trong phòng mình. Việc cần phòng khác → dùng Yêu cầu phối hợp." };
     const ow = f.ownerId ? userById(db, f.ownerId) : null;
@@ -1274,7 +1310,7 @@ function TaskForm({ onClose, defaults = {} }) {
           <Field label="Tiêu chí nghiệm thu"><input className={inputCls} value={f.acceptance} onChange={(e) => set("acceptance", e.target.value)} placeholder="VD: Đủ 3 angle · đúng format 6P · được Leader duyệt" /></Field>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3">
             <Field label="Người duyệt"><UserSelect value={f.approverId} onChange={(v) => set("approverId", v)} users={getEligibleApprovers(db, me, { ...f, ownerId: f.ownerId || me.id })} placeholder="— Không cần duyệt —" /></Field>
-            <Field label="Dự án"><select className={inputCls} value={f.projectId || ""} onChange={(e) => { set("projectId", e.target.value || null); if (e.target.value) set("type", "project"); }}><option value="">— Không thuộc dự án —</option>{db.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
+            <Field label="Dự án"><select className={inputCls} value={f.projectId || ""} onChange={(e) => { set("projectId", e.target.value || null); if (e.target.value) set("type", "project"); }}><option value="">— Không thuộc dự án —</option>{db.projects.filter((p) => canViewProject(db, me, p)).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
             <Field label="Ngày bắt đầu"><input type="date" className={inputCls} value={f.start} onChange={(e) => set("start", e.target.value)} /></Field>
             <Field label="Khối lượng ước tính"><select className={inputCls} value={f.effort} onChange={(e) => set("effort", e.target.value)}>{Object.entries(EFFORTS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
             <Field label="Lặp lại (task định kỳ)"><select className={inputCls} value={f.recurrence} onChange={(e) => { set("recurrence", e.target.value); if (e.target.value) set("type", "recurring"); }}><option value="">Không lặp</option><option value="daily">Hằng ngày</option><option value="weekly">Hằng tuần</option><option value="monthly">Hằng tháng</option></select></Field>
@@ -1486,9 +1522,11 @@ function BulkModal({ type, ids, onClose }) {
         if (r.ok) n++; else skipped.push({ name: t.name, why: "không đổi được deadline (đã khóa/thiếu quyền)" });
       } else {
         const ow = userById(db, v);
+        if (!perms.changeAssignee(db, me, t)) { skipped.push({ name: t.name, why: "chỉ Leader/Quản lý mới giao lại người phụ trách" }); return; }
         const scope = assignableUsers(db, me, { deptId: t.deptId, projectId: t.projectId });
         if (!scope.find((x) => x.id === v)) { skipped.push({ name: t.name, why: `${ow?.name} ngoài phạm vi giao việc của bạn` }); return; }
-        act.updateTask(id, { ownerId: v }, "giao việc (hàng loạt)"); n++;
+        const r = act.updateTask(id, { ownerId: v }, "giao việc (hàng loạt)");
+        if (r?.ok) n++; else skipped.push({ name: t.name, why: r?.msg || "không giao được" });
       }
     });
     setReport({ n, skipped });
@@ -2115,6 +2153,7 @@ function ProjectDetail({ id }) {
   const pct = totalW ? Math.round((doneW / totalW) * 100) : 0;
   const members = [...new Set(pts.flatMap((t) => [t.ownerId, ...(t.collaboratorIds || [])]).filter(Boolean))];
   const editable = ["admin", "ceo"].includes(me.role) || p.ownerId === me.id;
+  const canAddTask = canCreateTaskFor(db, me, { deptId: me.deptId, projectId: id, ownerId: me.id }).ok;
   const tabs = [["overview", "Tổng quan"], ["tasks", "Công việc"], ["timeline", "Timeline"], ["members", "Thành viên"], ["issues", "Vấn đề"]];
   return (
     <div>
@@ -2135,7 +2174,7 @@ function ProjectDetail({ id }) {
       <div className="mb-4 flex items-center gap-3 max-w-md"><ProgressBar v={pct} cls="bg-zinc-800" /><span className="text-xs text-zinc-500 whitespace-nowrap">{done}/{pts.length} task · {pct}%</span></div>
       <div className="mb-4 flex gap-1 border-b border-zinc-100">
         {tabs.map(([k, lb]) => <button key={k} onClick={() => setTab(k)} className={`px-3 py-2 text-[13px] font-medium border-b-2 -mb-px ${tab === k ? "border-zinc-900 text-zinc-900" : "border-transparent text-zinc-400 hover:text-zinc-600"}`}>{lb}</button>)}
-        <button className={`${btnGhost} ml-auto mb-1`} onClick={() => setCreating(true)}><Plus className="h-3.5 w-3.5" />Thêm task</button>
+        {canAddTask && <button className={`${btnGhost} ml-auto mb-1`} onClick={() => setCreating(true)}><Plus className="h-3.5 w-3.5" />Thêm task</button>}
       </div>
       {tab === "overview" && (
         <div className="grid gap-3 lg:grid-cols-2">
@@ -2354,7 +2393,8 @@ function RequestDrawer({ reqId, onClose }) {
   const isReceiverSide = me.deptId === r.toDeptId || ["admin", "ceo"].includes(me.role);
   const isReceiverLead = isReceiverFor(db, me, r.toDeptId) || r.receiverId === me.id;
   const isHandler = r.handlerId === me.id;
-  const isSender = r.fromUserId === me.id || me.deptId === r.fromDeptId;
+  /* Bên gửi có quyền thao tác = người tạo / leader phòng gửi / authorized sender — KHÔNG phải cả phòng */
+  const isSender = isSenderAuthorized(db, me, r);
   const Info = ({ label, children }) => <div className="grid grid-cols-[130px_1fr] gap-2 py-1.5 text-[13px]"><span className="text-zinc-400 text-xs">{label}</span><div className="text-zinc-700">{children}</div></div>;
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-zinc-900/20" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -2409,7 +2449,10 @@ function RequestDrawer({ reqId, onClose }) {
               {r.status === "accepted" && <button className={btnSec} onClick={() => { act.reqAction(r.id, "start"); toast("Đã chuyển sang Đang xử lý"); }}>Bắt đầu xử lý</button>}
               <button className={btnPri} onClick={() => {
                 const linked = r.taskId ? db.tasks.find((t) => t.id === r.taskId) : null;
-                if (linked && !linked.actual?.summary?.trim()) { toast("Cần điền kết quả thực tế (Actual Output) trong task trước khi bàn giao", "warn"); return; }
+                if (linked) {
+                  const hasActual = linked.actual?.summary?.trim() && (linked.actual.links?.length > 0 || linked.attachments?.length > 0);
+                  if (!hasActual) { toast("Cần Kết quả thực tế đầy đủ (tóm tắt + link/file) trong task trước khi bàn giao", "warn"); return; }
+                }
                 act.reqAction(r.id, "deliver"); toast("Đã bàn giao — chờ bên gửi xác nhận");
               }}>Bàn giao kết quả</button>
             </div>
@@ -3067,7 +3110,12 @@ export default function App() {
   };
 
   const act = {
-    updateTask: (id, patch, logText) => setDb((prev) => {
+    updateTask: (id, patch, logText) => {
+      const cur = db.tasks.find((t) => t.id === id);
+      if (!cur) return { ok: false };
+      const chk = canApplyTaskPatch(db, me, cur, patch);
+      if (!chk.ok) { toast(chk.msg, "warn"); return { ok: false, msg: chk.msg }; }
+      setDb((prev) => {
       const old = prev.tasks.find((t) => t.id === id); if (!old) return prev;
       let next = mapTask(prev, id, (t) => logText ? withLog({ ...t, ...patch }, meId, logText) : { ...t, ...patch, updatedAt: Date.now() });
       if (patch.ownerId && patch.ownerId !== old.ownerId) {
@@ -3076,7 +3124,9 @@ export default function App() {
       }
       if (patch.collaboratorIds) patch.collaboratorIds.filter((x) => !old.collaboratorIds.includes(x)).forEach((cid) => { next = notify(next, cid, `Bạn được thêm phối hợp: ${old.name}`, { taskId: id }); });
       return next;
-    }),
+      });
+      return { ok: true };
+    },
     changeStatus: (id, s, extra = {}) => {
       const t = db.tasks.find((x) => x.id === id);
       if (!t) return { ok: false, msg: "Không tìm thấy công việc" };
@@ -3120,7 +3170,16 @@ export default function App() {
       const old = prev.tasks.find((t) => t.id === id); if (!old) return prev;
       let next = mapTask(prev, id, (t) => withLog({ ...t, deadline: v, deadlineHistory: [...t.deadlineHistory, { from: t.deadline, to: v, by: meId, at: Date.now(), reason }] }, meId, `đổi deadline ${fmtDFull(old.deadline)} → ${fmtDFull(v)}${reason ? ` (${reason})` : ""}`));
       next = notify(next, old.ownerId, old.isConfidential ? "Deadline một công việc bảo mật của bạn thay đổi." : `Deadline thay đổi: ${old.name} → ${fmtDFull(v)}`, { taskId: id }, "act");
-      next = { ...next, requests: next.requests.map((r) => r.taskId === id && ["accepted", "processing"].includes(r.status) ? { ...r, agreedDeadline: v, logs: [...r.logs, { id: uid("l"), userId: meId, at: Date.now(), text: `deadline thống nhất cập nhật → ${fmtDFull(v)} (${reason || "đồng bộ từ task"})` }] } : r) };
+      /* Task liên phòng ban: KHÔNG ghi đè deadline đã thống nhất. Nếu request chưa chốt
+         deadline thì đồng bộ được; nếu đã chốt (agreedDeadline) thì giữ nguyên cam kết,
+         chỉ ghi nhận + yêu cầu bên gửi xác nhận lại (tránh phá thỏa thuận đơn phương). */
+      next = { ...next, requests: next.requests.map((r) => {
+        if (r.taskId !== id || !["accepted", "processing"].includes(r.status)) return r;
+        if (!r.agreedDeadline) return { ...r, agreedDeadline: v, logs: [...r.logs, { id: uid("l"), userId: meId, at: Date.now(), text: `deadline thống nhất → ${fmtDFull(v)} (${reason || "đồng bộ từ task"})` }] };
+        return { ...r, logs: [...r.logs, { id: uid("l"), userId: meId, at: Date.now(), text: `⚠️ deadline task đổi → ${fmtDFull(v)} (${reason}); deadline thống nhất vẫn là ${fmtDFull(r.agreedDeadline)} — cần bên gửi xác nhận lại` }] };
+      }) };
+      /* báo bên gửi các request đã chốt deadline để họ xác nhận lại */
+      next.requests.filter((r) => r.taskId === id && ["accepted", "processing"].includes(r.status) && r.agreedDeadline && r.agreedDeadline !== v).forEach((r) => { next = notify(next, r.fromUserId, `Deadline task phối hợp "${old.name}" được đề nghị đổi → ${fmtDFull(v)} · cần bạn xác nhận lại`, { requestId: r.id }, "act"); });
       return next;
       });
       return { ok: true };
@@ -3329,18 +3388,28 @@ export default function App() {
         next = notify(next, other, `Đề xuất deadline mới cho: ${r.title} → ${fmtDFull(payload.deadline)}`, { requestId: id }, "act");
       }
       if (action === "info") { next = mapReq(prev, id, (x) => log({ ...x, status: "info" }, `cần bổ sung: ${payload.note}`)); next = notify(next, r.fromUserId, `Cần bổ sung thông tin: ${r.title}`, { requestId: id }, "act"); }
-      if (action === "resend") next = mapReq(prev, id, (x) => log({ ...x, status: "pending" }, "đã bổ sung thông tin, gửi lại"));
+      if (action === "resend") {
+        if (!isSenderAuthorized(prev, me, r)) return prev;
+        next = mapReq(prev, id, (x) => log({ ...x, status: "pending" }, "đã bổ sung thông tin, gửi lại"));
+      }
       if (action === "reject") { next = mapReq(prev, id, (x) => log({ ...x, status: "rejected", rejectReason: payload.reason }, `từ chối yêu cầu: ${payload.reason}`)); next = notify(next, r.fromUserId, `Yêu cầu bị từ chối: ${r.title}`, { requestId: id }, "act"); }
       if (action === "start") { next = mapReq(prev, id, (x) => log({ ...x, status: "processing" }, "bắt đầu xử lý")); if (r.taskId) next = { ...next, tasks: next.tasks.map((t) => t.id === r.taskId && t.status === "todo" ? { ...t, status: "doing" } : t) }; }
       if (action === "deliver") {
-        /* Bàn giao phải có kết quả thực tế — task liên kết phải có actual_output */
+        /* Chỉ người xử lý / leader phòng nhận mới được bàn giao */
+        if (!(r.handlerId === meId || isReceiverFor(prev, me, r.toDeptId))) { toast("Chỉ người xử lý hoặc leader phòng nhận mới bàn giao được", "warn"); return prev; }
+        /* Bàn giao phải có kết quả thực tế — cùng chuẩn với gửi duyệt task: tóm tắt + (link hoặc file) */
         const linkedTask = r.taskId ? prev.tasks.find((t) => t.id === r.taskId) : null;
-        if (linkedTask && !linkedTask.actual?.summary?.trim()) return prev;
+        if (linkedTask) {
+          const hasActual = linkedTask.actual?.summary?.trim() && (linkedTask.actual.links?.length > 0 || linkedTask.attachments?.length > 0);
+          if (!hasActual) { toast("Cần Kết quả thực tế đầy đủ (tóm tắt + link/file) trong task trước khi bàn giao", "warn"); return prev; }
+        }
         next = mapReq(prev, id, (x) => log({ ...x, status: "delivered" }, "bàn giao kết quả"));
         if (r.taskId) next = { ...next, tasks: next.tasks.map((t) => t.id === r.taskId && !["done", "review"].includes(t.status) ? { ...t, status: "review" } : t) };
         next = notify(next, r.fromUserId, `Đã bàn giao, chờ bạn xác nhận: ${r.title}`, { requestId: id }, "act");
       }
       if (action === "confirm") {
+        /* Chỉ bên gửi có thẩm quyền (người tạo/leader phòng gửi/authorized) mới xác nhận hoàn thành */
+        if (!isSenderAuthorized(prev, me, r)) return prev;
         next = mapReq(prev, id, (x) => log({ ...x, status: "confirmed" }, "xác nhận hoàn thành, đóng yêu cầu"));
         if (r.taskId) next = { ...next, tasks: next.tasks.map((t) => t.id === r.taskId && t.status !== "done" ? withLog({ ...t, status: "done", progress: 100, completedAt: Date.now(), approvedAt: Date.now(), locked: !!t.approverId, confirmedById: meId }, meId, "bên gửi xác nhận hoàn thành yêu cầu — task đóng", { action: "approve" }) : t) };
         if (r.handlerId) next = notify(next, r.handlerId, `Bên gửi đã xác nhận hoàn thành: ${r.title}`, { requestId: id });
@@ -3496,7 +3565,7 @@ export default function App() {
 }
 
 /* Export nội bộ phục vụ unit test (không dùng trong UI) */
-export const __internals = { buildSeed, perms, runScheduler, runAlerts, occursToday, canManage, canCreateTaskFor, assignableUsers, canViewProject, canViewRequest, canViewDoc, deptReceiverId, isReceiverFor, userById, deptById, getEligibleApprovers, isSenderAuthorized, APPROVER_RULES };
+export const __internals = { buildSeed, perms, runScheduler, runAlerts, occursToday, canManage, canCreateTaskFor, canApplyTaskPatch, assignableUsers, canViewProject, canViewRequest, canViewDoc, deptReceiverId, isReceiverFor, userById, deptById, getEligibleApprovers, isSenderAuthorized, APPROVER_RULES, TASK_FIELD_PERM, TASK_FIELD_FORBIDDEN };
 /* ============================================================
    HR WORKSPACE — quy trình nhân sự dựa trên task
    Phạm vi: onboarding, thử việc, đào tạo, hồ sơ, offboarding,

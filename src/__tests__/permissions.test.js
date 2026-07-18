@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { __internals } from "../App.jsx";
 
-const { buildSeed, perms, canManage, canViewRequest, isSenderAuthorized, getEligibleApprovers, APPROVER_RULES } = __internals;
+const { buildSeed, perms, canManage, canViewRequest, isSenderAuthorized, getEligibleApprovers, APPROVER_RULES, canApplyTaskPatch, canCreateTaskFor, canViewProject } = __internals;
 
 let db;
 beforeEach(() => { db = buildSeed(); });
@@ -281,5 +281,66 @@ describe("canCreateTaskFor", () => {
     if (!otherDept) return;
     const f = { ownerId: emp.id, deptId: otherDept.id, type: "dept", projectId: null };
     expect(canCreateTaskFor(db, emp, f).ok).toBe(false);
+  });
+
+  it("employee cannot attach a task to a project outside their scope", () => {
+    const emp = db.users.find((u) => u.role === "employee");
+    if (!emp) return;
+    // pick a project the employee genuinely cannot view (not owner/watcher/dept-member)
+    const proj = db.projects.find((p) => !canViewProject(db, emp, p));
+    if (!proj) return;
+    const f = { ownerId: emp.id, deptId: emp.deptId, type: "project", projectId: proj.id };
+    expect(canCreateTaskFor(db, emp, f).ok).toBe(false);
+  });
+});
+
+// ── 10. canApplyTaskPatch — updateTask field-level permission ──────────────────
+describe("canApplyTaskPatch (updateTask backdoor closed)", () => {
+  const empOwnedDeptTask = () => {
+    const emp = db.users.find((u) => u.role === "employee");
+    const t = { ...db.tasks[0], type: "dept", locked: false, deleted: false, ownerId: emp.id, deptId: emp.deptId, creatorId: "someone_else" };
+    return { emp, t };
+  };
+
+  it("owner can patch content fields (name/desc/tags) on own task", () => {
+    const { emp, t } = empOwnedDeptTask();
+    expect(canApplyTaskPatch(db, emp, t, { name: "x", desc: "y", tags: ["a"] }).ok).toBe(true);
+  });
+
+  it("owner (non-manager) CANNOT reassign ownerId", () => {
+    const { emp, t } = empOwnedDeptTask();
+    expect(canApplyTaskPatch(db, emp, t, { ownerId: "ceo" }).ok).toBe(false);
+  });
+
+  it("owner (non-creator) CANNOT flip isConfidential", () => {
+    const { emp, t } = empOwnedDeptTask();
+    expect(canApplyTaskPatch(db, emp, t, { isConfidential: false }).ok).toBe(false);
+  });
+
+  it("owner (non-manager) CANNOT change approver", () => {
+    const { emp, t } = empOwnedDeptTask();
+    expect(canApplyTaskPatch(db, emp, t, { approverId: "ceo" }).ok).toBe(false);
+  });
+
+  it("forbidden system fields (status/deadline/locked) always rejected — even for admin", () => {
+    const admin = db.users.find((u) => u.role === "admin");
+    const t = { ...db.tasks[0], deleted: false, locked: false };
+    expect(canApplyTaskPatch(db, admin, t, { status: "done" }).ok).toBe(false);
+    expect(canApplyTaskPatch(db, admin, t, { deadline: "2030-01-01" }).ok).toBe(false);
+    expect(canApplyTaskPatch(db, admin, t, { locked: true }).ok).toBe(false);
+  });
+
+  it("unknown/unmapped field is rejected", () => {
+    const admin = db.users.find((u) => u.role === "admin");
+    const t = { ...db.tasks[0], deleted: false, locked: false };
+    expect(canApplyTaskPatch(db, admin, t, { hackerField: 1 }).ok).toBe(false);
+  });
+
+  it("manager CAN reassign ownerId and change approver", () => {
+    const admin = db.users.find((u) => u.role === "admin");
+    if (!admin) return;
+    const t = { ...db.tasks[0], type: "dept", locked: false, deleted: false };
+    expect(canApplyTaskPatch(db, admin, t, { ownerId: "x" }).ok).toBe(true);
+    expect(canApplyTaskPatch(db, admin, t, { approverId: "x" }).ok).toBe(true);
   });
 });
