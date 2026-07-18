@@ -14,6 +14,7 @@ create type task_priority as enum ('low','normal','high','critical');
 create type task_effort as enum ('S','M','L');
 create type req_status as enum ('pending','deadline_proposed','accepted','info','processing','delivered','confirmed','rejected','cancelled');
 create type req_visibility as enum ('PRIVATE','SENDER_DEPARTMENT','BOTH_DEPARTMENTS','PROJECT','COMPANY');
+create type task_visibility as enum ('private','department','project','company');
 create type audit_action as enum (
   'create','update','status','approve','reject','cancel','assign','deadline',
   'checklist_toggle','comment','deliver','confirm','attach','delete','restore'
@@ -44,6 +45,7 @@ create table projects (
   brand_id text references brands(id),
   owner_id uuid not null,
   dept_ids text[] not null default '{}',
+  watcher_ids uuid[] not null default '{}',
   status text not null default 'active' check (status in ('active','paused','done','archived')),
   start_date date,
   end_date date,
@@ -61,6 +63,7 @@ create table users (
   dept_id text references departments(id),
   brand_id text references brands(id),
   title text,
+  confidential_access boolean not null default false,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -101,7 +104,11 @@ create table tasks (
   locked boolean not null default false,
   is_confidential boolean not null default false,
   confidential_reason text,
-  visibility req_visibility not null default 'BOTH_DEPARTMENTS',
+  visibility task_visibility not null default 'department',
+  allowed_viewer_ids uuid[] not null default '{}',
+  requires_ack boolean not null default false,
+  acked_at timestamptz,
+  category text not null default 'GENERAL',
   report_link text,
   drive_link text,
   tags text[] not null default '{}',

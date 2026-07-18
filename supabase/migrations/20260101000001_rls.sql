@@ -35,6 +35,70 @@ returns boolean language sql security definer stable as $$
   select exists(select 1 from departments where id = p_dept_id and leader_id = auth.uid());
 $$;
 
+-- Helper: does the current user have confidential access flag
+create or replace function has_confidential_access()
+returns boolean language sql security definer stable as $$
+  select coalesce((select confidential_access from users where id = auth.uid()), false);
+$$;
+
+-- Helper: is current user "involved" in a task (mirrors JS involved())
+--   owner / creator / assigner / approver / collaborator / explicit allowed viewer
+create or replace function task_involves_me(t tasks)
+returns boolean language sql security definer stable as $$
+  select t.owner_id = auth.uid()
+      or t.creator_id = auth.uid()
+      or t.assigner_id = auth.uid()
+      or t.approver_id = auth.uid()
+      or auth.uid() = any(t.allowed_viewer_ids)
+      or exists(select 1 from task_collaborators tc where tc.task_id = t.id and tc.user_id = auth.uid());
+$$;
+
+-- Helper: can current user manage the task (mirrors JS canManage())
+create or replace function can_manage_task(t tasks)
+returns boolean language sql security definer stable as $$
+  select is_manager()
+      or is_dept_leader(t.dept_id)
+      or (t.project_id is not null and exists(
+            select 1 from projects p where p.id = t.project_id and p.owner_id = auth.uid()));
+$$;
+
+-- Master task-visibility function — mirrors perms.view() in App.jsx exactly.
+create or replace function can_view_task(t tasks)
+returns boolean language sql security definer stable as $$
+  select case
+    -- confidential gate applies even to deleted rows: deletion never widens access
+    when t.is_confidential and not (
+      task_involves_me(t)
+      or (t.dept_id = 'hr' and is_dept_leader('hr'))
+      or has_confidential_access()
+    ) then false
+    -- deleted → only managers (and confidential gate above already satisfied)
+    when t.deleted then can_manage_task(t)
+    -- confidential and passed the gate → visible
+    when t.is_confidential then true
+    -- private → strictly the involved set (managers NOT auto-granted, matching JS order)
+    when t.visibility = 'private' then task_involves_me(t)
+    -- managers see all remaining non-private, non-confidential tasks
+    when is_manager() then true
+    when t.visibility = 'company' then true
+    when t.visibility = 'project' then (
+      task_involves_me(t)
+      or (t.project_id is not null and exists(
+            select 1 from projects p where p.id = t.project_id and (
+              p.owner_id = auth.uid()
+              or auth.uid() = any(p.watcher_ids)
+              or exists(select 1 from users u where u.id = auth.uid() and u.dept_id = any(p.dept_ids))
+            )))
+      or is_dept_leader(t.dept_id)
+    )
+    else -- 'department'
+      task_involves_me(t)
+      or t.dept_id = (select dept_id from users where id = auth.uid())
+      or (select dept_id from users where id = auth.uid()) = any(t.co_dept_ids)
+      or is_dept_leader(t.dept_id)
+  end;
+$$;
+
 -- ============================================================
 -- BRANDS / DEPARTMENTS / PROJECTS — public read
 -- ============================================================
@@ -60,33 +124,12 @@ create policy "users: admin mutate" on users for all using (is_manager());
 -- TASKS
 -- ============================================================
 
+-- Single SELECT policy delegating to can_view_task(), which mirrors perms.view()
+-- in App.jsx (confidential gate, deleted-row managers-only, private/project/
+-- department/company visibility). Keeping one source of truth avoids drift
+-- between the client permission layer and the database.
 create policy "tasks: visibility" on tasks for select using (
-  deleted = false and (
-    is_manager()
-    or owner_id = auth.uid()
-    or creator_id = auth.uid()
-    or assigner_id = auth.uid()
-    or approver_id = auth.uid()
-    or (type = 'personal' and owner_id = auth.uid())
-    or (not is_confidential and (
-      (visibility = 'BOTH_DEPARTMENTS' and (dept_id = (select dept_id from users where id = auth.uid()) or dept_id = any(co_dept_ids)))
-      or (visibility = 'PROJECT' and project_id is not null and exists(
-          select 1 from projects p, users u
-          where p.id = project_id and u.id = auth.uid() and u.dept_id = any(p.dept_ids)
-        ))
-      or visibility = 'COMPANY'
-    ))
-    or (is_confidential and (
-      -- confidential: owner/assigner/approver only (already covered above) + HR leaders
-      exists(select 1 from departments d where d.id = dept_id and d.leader_id = auth.uid())
-      or exists(select 1 from users u where u.id = auth.uid() and u.dept_id in ('hr_nevor','hr_uhero'))
-    ))
-    or exists(select 1 from task_collaborators tc where tc.task_id = tasks.id and tc.user_id = auth.uid())
-  )
-);
-
-create policy "tasks: managers see deleted" on tasks for select using (
-  deleted = true and is_manager()
+  can_view_task(tasks)
 );
 
 create policy "tasks: create" on tasks for insert with check (
@@ -117,7 +160,7 @@ create policy "tasks: soft delete managers only" on tasks for update using (
 -- ============================================================
 
 create policy "task_collaborators: read via task" on task_collaborators for select using (
-  exists(select 1 from tasks t where t.id = task_id)
+  exists(select 1 from tasks t where t.id = task_id and can_view_task(t))
 );
 
 create policy "task_collaborators: mutate by owner/manager" on task_collaborators for all using (
@@ -131,20 +174,20 @@ create policy "task_collaborators: mutate by owner/manager" on task_collaborator
 -- ============================================================
 
 create policy "task_checklist: read via task" on task_checklist for select using (
-  exists(select 1 from tasks t where t.id = task_id)
+  exists(select 1 from tasks t where t.id = task_id and can_view_task(t))
 );
 
+-- Mirrors perms.canToggleChecklistItem: task must be unlocked; task owner and
+-- managers may toggle any item; a collaborator may toggle ONLY items assigned to
+-- them (owner_id = their id). Unassigned (owner_id null) items are reserved for
+-- the task owner/manager — collaborators cannot toggle them.
 create policy "task_checklist: toggle own items" on task_checklist for update using (
-  -- owner_id null = anyone on the task; owner_id set = only that user
-  (owner_id is null and exists(
-    select 1 from tasks t where t.id = task_id and (
-      t.owner_id = auth.uid() or t.assigner_id = auth.uid()
-      or exists(select 1 from task_collaborators tc where tc.task_id = t.id and tc.user_id = auth.uid())
-    )
+  exists(select 1 from tasks t where t.id = task_id and not t.locked and (
+    t.owner_id = auth.uid()
+    or can_manage_task(t)
+    or (owner_id = auth.uid()
+        and exists(select 1 from task_collaborators tc where tc.task_id = t.id and tc.user_id = auth.uid()))
   ))
-  or owner_id = auth.uid()
-  or is_manager()
-  or exists(select 1 from tasks t, departments d where t.id = task_id and d.id = t.dept_id and d.leader_id = auth.uid())
 );
 
 create policy "task_checklist: mutate by task owner/manager" on task_checklist for all using (
@@ -157,7 +200,7 @@ create policy "task_checklist: mutate by task owner/manager" on task_checklist f
 -- ============================================================
 
 create policy "task_deadline_history: read via task" on task_deadline_history for select using (
-  exists(select 1 from tasks t where t.id = task_id)
+  exists(select 1 from tasks t where t.id = task_id and can_view_task(t))
 );
 create policy "task_deadline_history: insert via task" on task_deadline_history for insert with check (
   exists(select 1 from tasks t where t.id = task_id)
@@ -184,29 +227,42 @@ create policy "task_attachments: insert collaborators" on task_attachments for i
 -- REQUESTS
 -- ============================================================
 
+-- Mirrors canViewRequest() in App.jsx.
 create policy "requests: visibility" on requests for select using (
-  deleted = false and (
-    is_manager()
-    or from_user_id = auth.uid()
-    or receiver_id = auth.uid()
-    or handler_id = auth.uid()
-    or auth.uid() = any(authorized_sender_ids)
-    or (visibility = 'SENDER_DEPARTMENT' and (
+  case
+    when deleted then is_manager()          -- deleted → managers only
+    when is_manager() then true             -- managers see everything non-deleted
+    -- direct parties always see it (any visibility, incl. PRIVATE)
+    when from_user_id = auth.uid()
+      or receiver_id = auth.uid()
+      or handler_id = auth.uid()
+      or auth.uid() = any(authorized_sender_ids) then true
+    when visibility = 'PRIVATE' then false
+    when visibility = 'SENDER_DEPARTMENT' then (
       from_dept_id = (select dept_id from users where id = auth.uid())
       or is_dept_leader(from_dept_id)
-    ))
-    or (visibility = 'BOTH_DEPARTMENTS' and (
+    )
+    when visibility = 'BOTH_DEPARTMENTS' then (
       from_dept_id = (select dept_id from users where id = auth.uid())
       or to_dept_id = (select dept_id from users where id = auth.uid())
       or is_dept_leader(from_dept_id)
       or is_dept_leader(to_dept_id)
-    ))
-    or (visibility = 'PROJECT' and project_id is not null and exists(
-      select 1 from projects p, users u
-      where p.id = project_id and u.id = auth.uid() and u.dept_id = any(p.dept_ids)
-    ))
-    or visibility = 'COMPANY'
-  )
+    )
+    when visibility = 'PROJECT' then (
+      case when project_id is not null then exists(
+        select 1 from projects p where p.id = project_id and (
+          p.owner_id = auth.uid()
+          or auth.uid() = any(p.watcher_ids)
+          or exists(select 1 from users u where u.id = auth.uid() and u.dept_id = any(p.dept_ids))
+        ))
+      else
+        from_dept_id = (select dept_id from users where id = auth.uid())
+        or to_dept_id = (select dept_id from users where id = auth.uid())
+      end
+    )
+    when visibility = 'COMPANY' then true
+    else false
+  end
 );
 
 create policy "requests: create sender dept" on requests for insert with check (
