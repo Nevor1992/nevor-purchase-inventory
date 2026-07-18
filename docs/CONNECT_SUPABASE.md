@@ -68,6 +68,7 @@ Một số phần UI đang có trong prototype nhưng **chưa có bảng** trong
 - ✅ Tầng code nối xong: login thật, `loadDb()`, sync engine, realtime, Storage (commit `1bd1fe8`).
 - ✅ Anon key đã xác thực với project thật; migrations `000000–000003` **đã áp trên server** (đủ bảng, trigger auth→users chạy đúng — hồ sơ tự tạo khi signup).
 - ✅ App → Supabase Auth thật hoạt động: đăng nhập trả đúng trạng thái từng trường hợp.
-- 🔴 **Server CHƯA áp `000004_rls_nullsafe.sql`** (vá lộ task bảo mật) **và `000005_lock_anon.sql`** (vá lộ email user/task company cho người chưa đăng nhập — đã tái hiện được trên project thật). Dán 2 file này vào SQL Editor → Run trước khi cho team dùng.
-- ⏳ User UAT `uat.novixwork@cuc.edu.vn` đã tạo (mật khẩu ở chat) nhưng chờ xác nhận email: **Authentication → Users → chọn user → Confirm email** (hoặc tắt "Confirm email" trong Auth settings khi UAT).
-- ℹ️ Cả 2 user hiện là `employee` — cần ít nhất 1 admin: `update public.users set role='admin' where email='...';`
+- ✅ **`000004_rls_nullsafe.sql` + `000005_lock_anon.sql` đã áp trên server** (xác nhận từ xa: `is_manager()` trả `false`, anon không còn đọc được bảng `users` của người khác).
+- 🔴 **Server CHƯA áp `000006_users_priv_guard.sql`** (chặn nhân viên tự nâng quyền admin qua PostgREST — tái hiện được trên harness). Dán file này vào SQL Editor → Run trước khi cho team dùng.
+- ⏳ User UAT `uat.novixwork@cuc.edu.vn` vẫn **"Waiting for verification"** → đăng nhập trả `email_not_confirmed`. Cần: **Authentication → Users → dấu ⋮ cuối dòng → Confirm email** (hoặc tắt "Confirm email" trong **Sign In / Providers → Email** khi UAT).
+- ℹ️ Cả 2 user hiện là `employee` — cần ít nhất 1 admin: `update public.users set role='admin' where email='nevorofficial@cuc.edu.vn';`
