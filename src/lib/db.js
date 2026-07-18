@@ -168,3 +168,17 @@ export async function uploadAttachment(file, taskId) {
   const { data } = supabase.storage.from("attachments").getPublicUrl(path);
   return { ok: true, url: data.publicUrl, path };
 }
+
+/* ---------------- admin: tạo tài khoản nhân sự qua Edge Function ----------------
+   service_role nằm ở server (Edge Function admin-create-user). Client chỉ gửi
+   thông tin + JWT admin; function tự xác thực người gọi là admin/ceo. */
+export async function adminCreateUser(payload) {
+  const { data, error } = await supabase.functions.invoke("admin-create-user", { body: payload });
+  if (error) {
+    let msg = error.message || "Không gọi được máy chủ";
+    try { const ctx = await error.context?.json?.(); if (ctx?.msg) msg = ctx.msg; } catch { /* ignore */ }
+    return { ok: false, msg };
+  }
+  if (!data?.ok) return { ok: false, msg: data?.msg || "Tạo tài khoản thất bại" };
+  return { ok: true, userId: data.userId };
+}

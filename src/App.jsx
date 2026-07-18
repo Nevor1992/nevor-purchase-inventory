@@ -11,7 +11,7 @@ import { btnPri, btnSec, btnGhost, btnDanger, inputCls, cardCls, popoverCls, STA
 import { PageHeader, Skeleton, SkeletonRows, DeadlineChip, Dot, Tooltip, ErrorBoundary } from "./ui/primitives.jsx";
 import { SUPABASE_ENABLED, SUPABASE_CONFIG_ERROR } from "./lib/supabase.js";
 import { signIn, signOut, getSession, onAuthChange } from "./lib/auth.js";
-import { loadDb, syncChanges, subscribeRealtime } from "./lib/db.js";
+import { loadDb, syncChanges, subscribeRealtime, adminCreateUser } from "./lib/db.js";
 
 /* ============================================================
    NOVIX WORK — Quản lý công việc nội bộ v0.2.0-uat-prep
@@ -2706,6 +2706,7 @@ function AdminPage() {
   const { db, me, act, toast } = useApp();
   const [tab, setTab] = useState("users");
   const [roleModal, setRoleModal] = useState(null); // {userId, role, reason}
+  const [addMember, setAddMember] = useState(false);
   if (!["admin", "ceo"].includes(me.role)) return <EmptyState icon={Settings} title="Chỉ Manager/Admin hoặc CEO truy cập được khu vực này" />;
   return (
     <div>
@@ -2714,6 +2715,13 @@ function AdminPage() {
         {[["users", "Thành viên"], ["depts", "Phòng ban"], ["recurring", "Task định kỳ"], ["trash", "Thùng rác"], ["rolelog", "Nhật ký phân quyền"], ["config", "Cấu hình"]].map(([k, lb]) => <button key={k} onClick={() => setTab(k)} className={`px-3 py-2 text-[13px] font-medium border-b-2 -mb-px ${tab === k ? "border-zinc-900 text-zinc-900" : "border-transparent text-zinc-400"}`}>{lb}</button>)}
       </div>
       {tab === "users" && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-[13px] text-zinc-500">{db.users.length} thành viên</p>
+            {SUPABASE_ENABLED
+              ? <button className={btnPri} onClick={() => setAddMember(true)}><Plus className="h-4 w-4" />Thêm thành viên</button>
+              : <span className="text-[11px] text-zinc-400">Thêm thành viên chỉ khả dụng ở bản Supabase</span>}
+          </div>
         <div className="rounded-xl border border-zinc-100 bg-white overflow-x-auto">
           <table className="w-full min-w-[640px] text-sm">
             <thead className="border-b border-zinc-100 bg-zinc-50/60"><tr>{["Nhân sự", "Chức danh", "Phòng ban", "Vai trò"].map((h) => <th key={h} className="px-3 py-2 text-left text-[11px] font-medium uppercase text-zinc-400">{h}</th>)}</tr></thead>
@@ -2728,6 +2736,7 @@ function AdminPage() {
               ))}
             </tbody>
           </table>
+        </div>
         </div>
       )}
       {tab === "depts" && (
@@ -2819,7 +2828,58 @@ function AdminPage() {
           <p><b className="text-zinc-800">Phân quyền dữ liệu:</b> Employee thấy task liên quan + task công khai trong phòng; Leader thấy toàn bộ phòng mình; Admin đa phòng ban; CEO toàn hệ thống. Bản production sẽ enforce bằng Supabase Row Level Security.</p>
         </div>
       )}
+      {addMember && <AddMemberModal onClose={() => setAddMember(false)} />}
     </div>
+  );
+}
+
+/* Mật khẩu tạm gợi ý — admin có thể sửa; đủ mạnh để chia sẻ 1 lần rồi nhân sự tự đổi. */
+function genPassword() {
+  const cs = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  let s = "";
+  for (let i = 0; i < 3; i++) s += cs[Math.floor(Math.random() * cs.length)];
+  return `Novix-${s}${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
+function AddMemberModal({ onClose }) {
+  const { db, me, act, toast } = useApp();
+  const [f, setF] = useState({ email: "", password: genPassword(), name: "", deptId: db.depts[0]?.id || "", role: "employee", title: "" });
+  const [busy, setBusy] = useState(false);
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.trim());
+  const valid = emailOk && f.password.length >= 6 && f.name.trim() && f.deptId;
+  const submit = async () => {
+    if (!valid || busy) return;
+    setBusy(true);
+    const r = await act.adminCreateUser({ email: f.email.trim().toLowerCase(), password: f.password, name: f.name.trim(), deptId: f.deptId, role: f.role, title: f.title.trim() });
+    setBusy(false);
+    if (!r.ok) { toast(r.msg, "err"); return; }
+    toast(`Đã tạo tài khoản ${f.name.trim()} — chia sẻ email + mật khẩu cho nhân sự`);
+    onClose();
+  };
+  const roleOpts = Object.entries(ROLE_LABELS).filter(([k]) => k !== "ceo" || me.role === "ceo");
+  return (
+    <Modal title="Thêm thành viên" onClose={onClose} wide>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3">
+        <Field label="Email đăng nhập" req><input type="email" autoFocus className={inputCls} value={f.email} onChange={(e) => set("email", e.target.value)} placeholder="ten@congty.vn" /></Field>
+        <Field label="Họ tên" req><input className={inputCls} value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Nguyễn Văn A" /></Field>
+        <Field label="Mật khẩu tạm" req>
+          <div className="flex gap-1.5">
+            <input className={inputCls} value={f.password} onChange={(e) => set("password", e.target.value)} />
+            <button type="button" className={btnSec} onClick={() => set("password", genPassword())} title="Tạo mật khẩu mới">↻</button>
+          </div>
+          <p className="mt-1 text-[10px] text-zinc-400">Admin chia sẻ mật khẩu này cho nhân sự; họ tự đổi sau khi đăng nhập.</p>
+        </Field>
+        <Field label="Chức danh"><input className={inputCls} value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="VD: Nhân viên Content" /></Field>
+        <Field label="Phòng ban" req><select className={inputCls} value={f.deptId} onChange={(e) => set("deptId", e.target.value)}>{db.depts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
+        <Field label="Vai trò"><select className={inputCls} value={f.role} onChange={(e) => set("role", e.target.value)}>{roleOpts.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+      </div>
+      {f.email && !emailOk && <p className="mb-2 text-xs text-amber-600">Email chưa đúng định dạng.</p>}
+      <div className="mt-3 flex justify-end gap-2 border-t border-zinc-100 pt-3">
+        <button className={btnSec} onClick={onClose}>Hủy</button>
+        <button className={btnPri} disabled={!valid || busy} onClick={submit}>{busy ? "Đang tạo…" : "Tạo tài khoản"}</button>
+      </div>
+    </Modal>
   );
 }
 
@@ -3714,6 +3774,16 @@ export default function App() {
     recurringEnd: (id) => setDb((prev) => ({ ...prev, recurrings: prev.recurrings.map((r) => r.id === id ? { ...r, endDate: todayISO() } : r) })),
     runSchedulerNow: (dateISO) => setDb((prev) => runAlerts(runScheduler(prev, dateISO || todayISO()))),
     adminUpdateDept: (id, patch) => setDb((prev) => ({ ...prev, depts: prev.depts.map((d) => d.id === id ? { ...d, ...patch } : d) })),
+    /* Tạo tài khoản nhân sự (chỉ Admin/CEO). Chạy qua Edge Function giữ service_role ở server. */
+    adminCreateUser: async ({ email, password, name, deptId, role, title }) => {
+      if (!["admin", "ceo"].includes(me.role)) return { ok: false, msg: "Chỉ Admin/CEO được tạo tài khoản" };
+      if (!SUPABASE_ENABLED) return { ok: false, msg: "Chức năng này chỉ dùng ở bản Supabase (đã deploy)" };
+      if (role === "ceo" && me.role !== "ceo") return { ok: false, msg: "Chỉ CEO tạo được tài khoản CEO" };
+      const r = await adminCreateUser({ email, password, name, deptId, role: role || "employee", title });
+      if (!r.ok) return r;
+      try { const fresh = await loadDb(); fresh.__remote = true; prevDbRef.current = fresh; setDb(fresh); } catch (e) { console.error("[admin] reload after create:", e); }
+      return { ok: true };
+    },
   };
 
   const ctx = { db, setDb, me, act, toast, nav, openTask: setTaskId, openRequest: setReqId };
