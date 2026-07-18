@@ -7,6 +7,8 @@ import {
   ChevronRight, ChevronsLeft, CheckCircle2, PauseCircle, RotateCcw,
   FileText, ExternalLink, Repeat, Trash2, PinOff, CornerDownRight, Star, Save, Lock
 } from "lucide-react";
+import { btnPri, btnSec, btnGhost, btnDanger, inputCls, cardCls, popoverCls, STATUS_TONE, PRIORITY_TONE } from "./ui/tokens.js";
+import { PageHeader, Skeleton, SkeletonRows, DeadlineChip, Dot, Tooltip } from "./ui/primitives.jsx";
 
 /* ============================================================
    NOVIX WORK — Quản lý công việc nội bộ v0.2.0-uat-prep
@@ -776,10 +778,7 @@ const Field = ({ label, req, children }) => (
     {children}
   </label>
 );
-const inputCls = "w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 placeholder:text-zinc-300 focus:outline-none focus:ring-2 focus:ring-zinc-800/10 focus:border-zinc-400";
-const btnPri = "inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed";
-const btnSec = "inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50";
-const btnGhost = "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700";
+/* btnPri / btnSec / btnGhost / inputCls now imported from ./ui/tokens.js */
 
 function UserSelect({ value, onChange, deptId, users, allowEmpty = true, placeholder = "— Chọn người —" }) {
   const { db } = useApp();
@@ -2909,38 +2908,61 @@ function Sidebar({ page, nav, collapsed, setCollapsed }) {
   const { db, me } = useApp();
   const approveCnt = db.tasks.filter((t) => !t.deleted && t.status === "review" && t.approverId === me.id).length;
   const reqCnt = me.role === "leader" ? db.requests.filter((r) => r.toDeptId === me.deptId && ["pending", "info"].includes(r.status)).length : 0;
-  const items = [
-    ["dashboard", "Trang chủ", Home],
-    ["myTasks", "Công việc của tôi", CheckSquare],
-    ["departments", "Phòng ban", Building2],
-    ["projects", "Dự án", FolderKanban],
-    ["requests", "Yêu cầu phối hợp", ArrowLeftRight, reqCnt],
-    ["approvals", "Chờ duyệt", BadgeCheck, approveCnt],
-    ["calendar", "Lịch", CalendarDays],
-    ["documents", "Tài liệu liên kết", Link2],
-    ...((me.deptId === "hr" || ["admin", "ceo"].includes(me.role)) ? [["hr", "Nhân sự", Users]] : []),
-    ...(["admin", "ceo"].includes(me.role) ? [["admin", "Quản trị", Settings]] : []),
+  const groups = [
+    ["Công việc", [
+      ["dashboard", "Trang chủ", Home],
+      ["myTasks", "Công việc của tôi", CheckSquare],
+      ["calendar", "Lịch", CalendarDays],
+    ]],
+    ["Điều phối", [
+      ["departments", "Phòng ban", Building2],
+      ["projects", "Dự án", FolderKanban],
+      ["requests", "Yêu cầu phối hợp", ArrowLeftRight, reqCnt],
+      ["approvals", "Chờ duyệt", BadgeCheck, approveCnt],
+    ]],
+    ["Tài liệu", [
+      ["documents", "Tài liệu liên kết", Link2],
+    ]],
+    ...(((me.deptId === "hr" || ["admin", "ceo"].includes(me.role)) || ["admin", "ceo"].includes(me.role)) ? [["Quản trị", [
+      ...((me.deptId === "hr" || ["admin", "ceo"].includes(me.role)) ? [["hr", "Nhân sự", Users]] : []),
+      ...(["admin", "ceo"].includes(me.role) ? [["admin", "Quản trị", Settings]] : []),
+    ]]] : []),
   ];
   const on = (k) => page.name === k || (k === "departments" && page.name === "deptDetail") || (k === "projects" && page.name === "projectDetail");
+  const Item = ([k, lb, Ic, badge]) => {
+    const active = on(k);
+    const btn = (
+      <button key={k} onClick={() => nav(k)} aria-label={lb} aria-current={active ? "page" : undefined}
+        className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition-colors ${collapsed ? "h-10 justify-center" : "h-9"} ${active ? "bg-zinc-100 font-medium text-zinc-900" : "font-medium text-zinc-500 hover:bg-zinc-50 hover:text-zinc-800"}`}>
+        <Ic className="h-[18px] w-[18px] shrink-0" strokeWidth={active ? 2.2 : 1.9} />
+        {!collapsed && <span className="flex-1 text-left truncate">{lb}</span>}
+        {!collapsed && badge > 0 && <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-600 tabular-nums">{badge}</span>}
+        {collapsed && badge > 0 && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-red-500" />}
+      </button>
+    );
+    return collapsed ? <Tooltip key={k} label={lb}><span className="relative block w-full">{btn}</span></Tooltip> : btn;
+  };
   return (
-    <aside className={`${collapsed ? "w-14" : "w-56"} shrink-0 border-r border-zinc-100 bg-white flex-col transition-all hidden md:flex`}>
-      <div className={`flex items-center gap-2.5 px-3 py-3.5 ${collapsed ? "justify-center" : ""}`}>
+    <aside className={`${collapsed ? "w-16" : "w-60"} shrink-0 border-r border-zinc-200 bg-white flex-col transition-all duration-200 hidden md:flex`}>
+      <div className={`flex h-14 items-center gap-2.5 px-3.5 ${collapsed ? "justify-center" : ""}`}>
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-[11px] font-bold text-white">NW</span>
         {!collapsed && <span className="text-sm font-bold tracking-tight text-zinc-900">NOVIX WORK</span>}
       </div>
-      <nav className="flex-1 px-2 space-y-0.5">
-        {items.map(([k, lb, Ic, badge]) => (
-          <button key={k} onClick={() => nav(k)} title={lb}
-            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors ${collapsed ? "justify-center" : ""} ${on(k) ? "bg-zinc-900 text-white" : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-800"}`}>
-            <Ic className="h-4 w-4 shrink-0" />
-            {!collapsed && <span className="flex-1 text-left">{lb}</span>}
-            {!collapsed && badge > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${on(k) ? "bg-white/20 text-white" : "bg-red-50 text-red-600"}`}>{badge}</span>}
-          </button>
+      <nav className="flex-1 overflow-y-auto px-2.5 py-1">
+        {groups.map(([label, items]) => (
+          <div key={label} className="mb-3">
+            {!collapsed && <p className="px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{label}</p>}
+            {collapsed && <div className="mx-2 mb-1.5 border-t border-zinc-100" />}
+            <div className="space-y-0.5">{items.map(Item)}</div>
+          </div>
         ))}
       </nav>
-      <button onClick={() => setCollapsed(!collapsed)} className="m-2 flex items-center justify-center gap-2 rounded-lg px-2 py-2 text-xs text-zinc-400 hover:bg-zinc-50 hover:text-zinc-600">
-        <ChevronsLeft className={`h-4 w-4 transition-transform ${collapsed ? "rotate-180" : ""}`} />{!collapsed && "Thu gọn"}
-      </button>
+      <div className="border-t border-zinc-100 p-2">
+        <button onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
+          className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-zinc-400 hover:bg-zinc-50 hover:text-zinc-600 ${collapsed ? "justify-center" : ""}`}>
+          <ChevronsLeft className={`h-4 w-4 transition-transform ${collapsed ? "rotate-180" : ""}`} />{!collapsed && "Thu gọn"}
+        </button>
+      </div>
     </aside>
   );
 }
@@ -3083,7 +3105,8 @@ export default function App() {
   const [taskId, setTaskId] = useState(null);
   const [reqId, setReqId] = useState(null);
   const [creating, setCreating] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem("nvx.sidebar.collapsed") === "1"; } catch { return false; } });
+  useEffect(() => { try { localStorage.setItem("nvx.sidebar.collapsed", collapsed ? "1" : "0"); } catch {} }, [collapsed]);
   const [mobileNav, setMobileNav] = useState(false);
 
   /* ===== Hash routing: mỗi entity có URL, copy link được, Back hoạt động.
