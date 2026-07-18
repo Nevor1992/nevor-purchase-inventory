@@ -53,4 +53,8 @@ Một số phần UI đang có trong prototype nhưng **chưa có bảng** trong
 
 ---
 
-**Trạng thái:** foundation đã commit. Bước tiếp theo cần **Phần 1** của bạn (tạo project + gửi URL/anon key) để tôi nối và kiểm thử tầng dữ liệu cho chuẩn.
+**Trạng thái (cập nhật 18/07/2026):**
+- ✅ Toàn bộ tầng code đã nối xong: login thật, `loadDb()`, sync engine ghi xuống DB, realtime, upload Storage (commit `1bd1fe8`).
+- ✅ Đã xác nhận **network từ môi trường dev tới `https://nyfcrsshruusdpuprvka.supabase.co` thông** (Auth API phản hồi đúng).
+- ✅ App tự nhận diện anon key sai định dạng/placeholder → chạy prototype + banner cảnh báo (không còn lỗi fetch khó hiểu).
+- ⏳ **Đang chờ anon key thật.** Key gửi trong chat đang là placeholder (`<ANON_KEY>`) — vào **Supabase Dashboard → Project Settings → API → `anon public`**, copy chuỗi bắt đầu bằng `eyJ...` (dài ~200 ký tự) và gửi lại. Có key là kiểm thử end-to-end được ngay (login, RLS, realtime).

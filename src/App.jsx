@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { btnPri, btnSec, btnGhost, btnDanger, inputCls, cardCls, popoverCls, STATUS_TONE, PRIORITY_TONE } from "./ui/tokens.js";
 import { PageHeader, Skeleton, SkeletonRows, DeadlineChip, Dot, Tooltip, ErrorBoundary } from "./ui/primitives.jsx";
-import { SUPABASE_ENABLED } from "./lib/supabase.js";
+import { SUPABASE_ENABLED, SUPABASE_CONFIG_ERROR } from "./lib/supabase.js";
 import { signIn, signOut, getSession, onAuthChange } from "./lib/auth.js";
 import { loadDb, syncChanges, subscribeRealtime } from "./lib/db.js";
 
@@ -2911,7 +2911,14 @@ function LoginSupabase() {
     setBusy(true); setErr("");
     const r = await signIn(email.trim(), pw);
     setBusy(false);
-    if (!r.ok) setErr(r.msg === "Invalid login credentials" ? "Email hoặc mật khẩu không đúng" : r.msg);
+    if (!r.ok) {
+      const vi = {
+        "Invalid login credentials": "Email hoặc mật khẩu không đúng",
+        "Invalid API key": "Khoá kết nối (anon key) không hợp lệ — liên hệ Admin kiểm tra cấu hình.",
+        "Email not confirmed": "Email chưa được xác nhận — liên hệ Admin/HR.",
+      };
+      setErr(vi[r.msg] || (/fetch|network/i.test(r.msg || "") ? "Không kết nối được máy chủ — kiểm tra mạng rồi thử lại." : r.msg));
+    }
     /* thành công → onAuthChange trong App tự nạp dữ liệu */
   };
   return (
@@ -2956,6 +2963,11 @@ function LoginScreen({ onLogin }) {
           <h1 className="text-xl font-bold text-zinc-900 tracking-tight">NOVIX WORK</h1>
           <p className="mt-1 text-[13px] text-zinc-400">Ai làm gì · Deadline khi nào · Đang vướng ở đâu · Ai xử lý tiếp</p>
         </div>
+        {SUPABASE_CONFIG_ERROR && (
+          <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            ⚠ {SUPABASE_CONFIG_ERROR} Đang chạy chế độ demo in-memory (dữ liệu mất khi refresh).
+          </p>
+        )}
         <div className="rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm">
           <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Đăng nhập bằng tài khoản demo</p>
           <div className="space-y-1.5">
