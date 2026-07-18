@@ -56,6 +56,30 @@ A new local test harness (`scripts/test-rls-local.sh` + `supabase/tests/rls_test
 
 RLS suite: **58/58 pass** after the fixes (before: 44/48; +anon-lock & privilege-escalation assertions). Also verified on real Postgres: all 5 migrations apply cleanly in order; `audit_log` immutable even for direct UPDATE/DELETE; `auth.users → public.users` sync trigger creates an `employee` profile row.
 
+### Round 5 — verified end-to-end against the LIVE Supabase project (18/07/2026)
+
+Connected the app to the real project (`nyfcrsshruusdpuprvka`) with the production anon key and drove it in a headless browser + REST. Migrations `000004`, `000005`, `000006` confirmed applied on the server.
+
+| Check | Method | Result |
+|-------|--------|--------|
+| Real login (email/password) | app UI | ✓ signs in, session persists |
+| `loadDb()` reads from Postgres | app UI | ✓ created task appears in "Công việc của tôi" with correct owner/dept/status |
+| `fetchMe` maps profile | app UI | ✓ display name reflects a DB write round-trip |
+| Task write path | REST as user | ✓ insert persists (`status=todo`); reload shows it |
+| Insert guard — forge `creator_id` | REST | ✓ blocked (`42501`) |
+| Self privilege escalation (`role`/`hr_confidential_access`) | REST | ✓ blocked (`42501`, migration 000006) |
+| Cross-user edit | REST | ✓ 0 rows (RLS) |
+| Soft-delete by employee | REST | ✓ blocked (`42501`, managers only) |
+| Hard-delete by employee | REST | ✓ 0 rows (no policy) |
+| `audit_log` read by employee | REST | ✓ empty (managers only) |
+| Anon (no login) reads data | REST | ✓ blocked (migration 000005) |
+
+**Bug #24 (UX) fixed this round:** for an employee whose `dept_id` is still `null` (every user right after the auth→users trigger, before an admin assigns a department), the create-task submit button was silently disabled — `canCreateTaskFor` returned ok (null==null) but the `valid` guard requires `deptId`. Added an inline hint: *"Tài khoản của bạn chưa được gán phòng ban — liên hệ Admin/HR…"* so the dead-end is explained.
+
+**Not testable from the sandbox — needs a real browser (works once on Vercel):** Realtime uses WebSocket, which the container's egress proxy does not tunnel. Verify by opening the app in two tabs and confirming a task created in one appears in the other without refresh.
+
+**Left in the project:** one test task `UAT-E2E-1` (owner = UAT Tester). An admin can soft-delete it from the UI, or run `delete from tasks where code='UAT-E2E-1';` in the SQL Editor.
+
 ---
 
 ## 2. Changed Files

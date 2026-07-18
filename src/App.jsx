@@ -1363,6 +1363,7 @@ function TaskForm({ onClose, defaults = {} }) {
         </div>
       )}
       {!chk.ok && <p className="mb-2 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-700">{chk.msg}</p>}
+      {chk.ok && !f.deptId && <p className="mb-2 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-700">Tài khoản của bạn chưa được gán phòng ban — liên hệ Admin/HR để thêm vào phòng trước khi tạo công việc.</p>}
       <div className="mt-3 flex justify-end gap-2 border-t border-zinc-100 pt-3">
         <button className={btnSec} onClick={() => onClose(null)}>Hủy</button>
         <button className={btnPri} disabled={!valid} onClick={submit}><Plus className="h-4 w-4" />Tạo công việc</button>
