@@ -70,5 +70,8 @@ Deno.serve(async (req) => {
     await admin.from("users").upsert({ id: newId, email, name, role, dept_id: deptId, title });
   }
 
-  return json({ ok: true, userId: newId });
+  // Trả về hồ sơ vừa tạo để client chèn thẳng vào danh sách (khỏi tải lại toàn bộ)
+  const { data: row } = await admin.from("users")
+    .select("id, email, name, role, dept_id, brand_id, title, hr_confidential_access").eq("id", newId).single();
+  return json({ ok: true, userId: newId, user: row });
 });

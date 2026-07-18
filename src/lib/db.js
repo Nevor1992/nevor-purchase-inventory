@@ -180,5 +180,5 @@ export async function adminCreateUser(payload) {
     return { ok: false, msg };
   }
   if (!data?.ok) return { ok: false, msg: data?.msg || "Tạo tài khoản thất bại" };
-  return { ok: true, userId: data.userId };
+  return { ok: true, userId: data.userId, user: data.user || null };
 }

@@ -3781,7 +3781,11 @@ export default function App() {
       if (role === "ceo" && me.role !== "ceo") return { ok: false, msg: "Chỉ CEO tạo được tài khoản CEO" };
       const r = await adminCreateUser({ email, password, name, deptId, role: role || "employee", title });
       if (!r.ok) return r;
-      try { const fresh = await loadDb(); fresh.__remote = true; prevDbRef.current = fresh; setDb(fresh); } catch (e) { console.error("[admin] reload after create:", e); }
+      /* users không nằm trong sync engine → chỉ cần chèn vào state, khỏi tải lại toàn bộ */
+      if (r.user) {
+        const m = { id: r.user.id, name: r.user.name, role: r.user.role, deptId: r.user.dept_id, brandId: r.user.brand_id, title: r.user.title, email: r.user.email, hrConfidentialAccess: r.user.hr_confidential_access === true };
+        setDb((prev) => prev.users.some((u) => u.id === m.id) ? prev : { ...prev, users: [...prev.users, m] });
+      }
       return { ok: true };
     },
   };
