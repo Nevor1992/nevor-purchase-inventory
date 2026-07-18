@@ -9,6 +9,9 @@ import {
 } from "lucide-react";
 import { btnPri, btnSec, btnGhost, btnDanger, inputCls, cardCls, popoverCls, STATUS_TONE, PRIORITY_TONE } from "./ui/tokens.js";
 import { PageHeader, Skeleton, SkeletonRows, DeadlineChip, Dot, Tooltip, ErrorBoundary } from "./ui/primitives.jsx";
+import { SUPABASE_ENABLED } from "./lib/supabase.js";
+import { signIn, signOut, getSession, onAuthChange } from "./lib/auth.js";
+import { loadDb, syncChanges, subscribeRealtime } from "./lib/db.js";
 
 /* ============================================================
    NOVIX WORK — Quản lý công việc nội bộ v0.2.0-uat-prep
@@ -34,7 +37,10 @@ const fmtDT = (t) => {
   return `${String(x.getDate()).padStart(2, "0")}/${String(x.getMonth() + 1).padStart(2, "0")} ${String(x.getHours()).padStart(2, "0")}:${String(x.getMinutes()).padStart(2, "0")}`;
 };
 let _seq = 1000;
-const uid = (p = "id") => `${p}_${Date.now().toString(36)}${(_seq++).toString(36)}`;
+/* Supabase mode: real uuid PKs (DB requirement). Prototype mode: short readable ids. */
+const uid = (p = "id") => SUPABASE_ENABLED && typeof crypto !== "undefined" && crypto.randomUUID
+  ? crypto.randomUUID()
+  : `${p}_${Date.now().toString(36)}${(_seq++).toString(36)}`;
 
 /* ---------- Domain constants ---------- */
 const STATUSES = {
@@ -2893,6 +2899,42 @@ function MyTasksPage() {
 
 const FontLoad = () => <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap'); *{-webkit-font-smoothing:antialiased;} ::-webkit-scrollbar{height:8px;width:8px;} ::-webkit-scrollbar-thumb{background:#e4e4e7;border-radius:8px;} .truncate{min-width:0;} html,body{overflow-x:hidden;}`}</style>;
 
+/* Đăng nhập thật (chế độ Supabase): email + mật khẩu do Admin/HR cấp */
+function LoginSupabase() {
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!email.trim() || !pw) return;
+    setBusy(true); setErr("");
+    const r = await signIn(email.trim(), pw);
+    setBusy(false);
+    if (!r.ok) setErr(r.msg === "Invalid login credentials" ? "Email hoặc mật khẩu không đúng" : r.msg);
+    /* thành công → onAuthChange trong App tự nạp dữ liệu */
+  };
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-4" style={{ fontFamily: "'Be Vietnam Pro', -apple-system, 'Segoe UI', sans-serif" }}>
+      <FontLoad />
+      <form onSubmit={submit} className="w-full max-w-sm">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-zinc-900 text-white font-bold text-sm tracking-tight">NW</div>
+          <h1 className="text-xl font-bold text-zinc-900 tracking-tight">NOVIX WORK</h1>
+          <p className="mt-1 text-[13px] text-zinc-400">Đăng nhập bằng tài khoản công ty</p>
+        </div>
+        <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm space-y-3">
+          <Field label="Email" req><input type="email" autoFocus autoComplete="username" className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ten@novix.vn" /></Field>
+          <Field label="Mật khẩu" req><input type="password" autoComplete="current-password" className={inputCls} value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
+          {err && <p className="rounded-lg bg-red-50 border border-red-100 px-3 py-2 text-xs text-red-600">{err}</p>}
+          <button type="submit" className={`${btnPri} w-full`} disabled={busy || !email.trim() || !pw}>{busy ? "Đang đăng nhập…" : "Đăng nhập"}</button>
+          <p className="text-center text-[11px] text-zinc-400">Quên mật khẩu? Liên hệ Admin/HR để cấp lại.</p>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function LoginScreen({ onLogin }) {
   const demo = [
     ["ceo", "Xem toàn công ty, duyệt quyết định lớn"],
@@ -3138,6 +3180,59 @@ const runAlerts = (dbx) => {
 export default function App() {
   const [db, setDb] = useState(buildSeed);
   const [meId, setMeId] = useState(null);
+  const [booting, setBooting] = useState(SUPABASE_ENABLED);
+
+  /* ===== Supabase mode: session → load real data; persist local changes; realtime ===== */
+  const prevDbRef = useRef(null);
+  const bootedRef = useRef(false);
+  useEffect(() => {
+    if (!SUPABASE_ENABLED) return;
+    let cancelled = false;
+    const boot = async (session) => {
+      if (!session) { setMeId(null); setBooting(false); return; }
+      try {
+        const data = await loadDb();
+        if (cancelled) return;
+        prevDbRef.current = data;
+        setDb(data);
+        setMeId(session.user.id);
+      } catch (e) {
+        console.error("[supabase] load failed:", e);
+      } finally { if (!cancelled) setBooting(false); }
+    };
+    getSession().then((s) => { if (s) { bootedRef.current = true; boot(s); } else setBooting(false); });
+    const off = onAuthChange((session) => {
+      if (!session) { bootedRef.current = false; setMeId(null); return; }
+      if (!bootedRef.current) { bootedRef.current = true; setBooting(true); boot(session); }
+    });
+    return () => { cancelled = true; off(); };
+  }, []);
+
+  /* Persist mutations: diff previous vs next state, write dirty rows through RLS */
+  useEffect(() => {
+    if (!SUPABASE_ENABLED || !meId) return;
+    const prev = prevDbRef.current;
+    prevDbRef.current = db;
+    if (prev && prev !== db && !prev.__remote) syncChanges(prev, db);
+  }, [db, meId]);
+
+  /* Realtime: reload on other users' changes (debounced) */
+  useEffect(() => {
+    if (!SUPABASE_ENABLED || !meId) return;
+    let timer = null;
+    const off = subscribeRealtime(() => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        try {
+          const fresh = await loadDb();
+          fresh.__remote = true;
+          prevDbRef.current = fresh;
+          setDb(fresh);
+        } catch (e) { console.error("[supabase] refresh failed:", e); }
+      }, 800);
+    });
+    return () => { clearTimeout(timer); off(); };
+  }, [meId]);
   const [page, setPage] = useState({ name: "dashboard", params: {} });
   const [taskId, setTaskId] = useState(null);
   const [reqId, setReqId] = useState(null);
@@ -3610,9 +3705,15 @@ export default function App() {
 
   const ctx = { db, setDb, me, act, toast, nav, openTask: setTaskId, openRequest: setReqId };
 
-  useEffect(() => { if (me) setDb((prev) => runAlerts(runScheduler(prev))); }, [meId]); // eslint-disable-line
+  /* Prototype mode: scheduler + alerts chạy client. Supabase mode: Edge Function + pg_cron lo (server-side). */
+  useEffect(() => { if (me && !SUPABASE_ENABLED) setDb((prev) => runAlerts(runScheduler(prev))); }, [meId]); // eslint-disable-line
 
-  if (!me) return <LoginScreen onLogin={(id) => { setMeId(id); setPage({ name: "dashboard", params: {} }); }} />;
+  if (SUPABASE_ENABLED && booting) return (
+    <div className="flex min-h-screen items-center justify-center bg-zinc-50"><div className="text-center"><div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-zinc-900 text-white font-bold text-sm">NW</div><p className="text-[13px] text-zinc-400">Đang tải dữ liệu…</p></div></div>
+  );
+  if (!me) return SUPABASE_ENABLED
+    ? <LoginSupabase />
+    : <LoginScreen onLogin={(id) => { setMeId(id); setPage({ name: "dashboard", params: {} }); }} />;
 
   return (
     <Ctx.Provider value={ctx}>
@@ -3628,7 +3729,7 @@ export default function App() {
           </div>
         )}
         <div className="flex min-w-0 flex-1 flex-col">
-          <Topbar onMobileNav={() => setMobileNav(true)} onCreate={() => setCreating(true)} onLogout={() => { setMeId(null); setTaskId(null); setReqId(null); }} />
+          <Topbar onMobileNav={() => setMobileNav(true)} onCreate={() => setCreating(true)} onLogout={() => { if (SUPABASE_ENABLED) signOut(); setMeId(null); setTaskId(null); setReqId(null); }} />
           <main className="flex-1 min-w-0 px-3 sm:px-5 py-4 sm:py-5 max-w-[1200px] w-full mx-auto">
             <ErrorBoundary key={page.name + (page.params?.id || "")}>
             {page.name === "dashboard" && <Dashboard />}
