@@ -45,6 +45,19 @@ exception when others then
   return true;
 end $$;
 
+-- true nếu câu lệnh bị từ chối khi CHƯA đăng nhập (role anon, không có JWT)
+create or replace function run_anon_denied(q text) returns boolean
+language plpgsql as $$
+begin
+  perform set_config('request.jwt.claims', '', true);
+  set local role anon;
+  execute q;
+  reset role;
+  return false;
+exception when others then
+  return true;
+end $$;
+
 create or replace procedure t(p_name text, p_got anyelement, p_want anyelement)
 language plpgsql as $$
 begin
@@ -217,6 +230,13 @@ begin
   call t('audit: nhân viên KHÔNG đọc được',         run_count(mai, $q$select count(*) from audit_log$q$), 0::bigint);
   call t('audit: user thường KHÔNG insert được',    run_denied(linh, $q$insert into audit_log (actor_id,action,entity_type,entity_id)
       values ('00000000-0000-0000-0000-000000000003','create','task','10000000-0000-0000-0000-000000000001')$q$), true);
+
+  -- ---- Anon (chưa đăng nhập) bị khoá hoàn toàn khỏi dữ liệu ----
+  call t('anon: KHÔNG đọc được users',              run_anon_denied($q$select count(*) from users$q$), true);
+  call t('anon: KHÔNG đọc được tasks',              run_anon_denied($q$select count(*) from tasks$q$), true);
+  call t('anon: KHÔNG đọc được departments',        run_anon_denied($q$select count(*) from departments$q$), true);
+  call t('anon: KHÔNG ghi được tasks',              run_anon_denied($q$insert into tasks (code,name,creator_id,owner_id,dept_id)
+      values ('T-ANON','xâm nhập','00000000-0000-0000-0000-000000000004','00000000-0000-0000-0000-000000000004','content')$q$), true);
 end $$;
 
 -- audit_log immutable ngay cả với superuser (DDL rule nuốt UPDATE/DELETE)

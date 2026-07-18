@@ -51,8 +51,9 @@ A new local test harness (`scripts/test-rls-local.sh` + `supabase/tests/rls_test
 |---|------|-----|-----|
 | 20 | **Confidential-task NULL leak** | `task_involves_me()` compares `assigner_id`/`approver_id` (usually NULL) with `auth.uid()`; NULL propagated through the OR-chain, so in `can_view_task()` the guard branch `is_confidential and not can_see_confidential(t)` evaluated to NULL (skipped) and fell through to `when is_confidential then true` — **any user could read confidential tasks (incl. HR records) whenever the task had no approver** | Migration `20260101000004_rls_nullsafe.sql`: `coalesce(..., false)` in `is_manager` / `is_ceo` / `task_involves_me` / `can_see_confidential` |
 | 21 | Checklist toggle policy dead arm | In policy `task_checklist: toggle own items`, unqualified `owner_id` inside the `tasks` subquery resolved to `tasks.owner_id`, not `task_checklist.owner_id` — collaborators could never tick their own items via the API | Policy recreated with qualified `task_checklist.owner_id` |
+| 22 | **Anonymous data exposure** (reproduced on the live project) | Policies like `users: read all using(true)` and the `visibility='company' → true` branch have no `to authenticated` restriction — anyone holding the public anon key (shipped in the JS bundle) could read the full user list (emails) and all company-visibility tasks without logging in | Migration `20260101000005_lock_anon.sql`: revoke all `public`-schema privileges from `anon` (incl. default privileges for future tables); the app requires login for all data access, Edge Functions use `service_role` |
 
-RLS suite: **48/48 pass** after the fix (before: 44/48). Also verified on real Postgres: all 5 migrations apply cleanly in order; `audit_log` immutable even for direct UPDATE/DELETE; `auth.users → public.users` sync trigger creates an `employee` profile row.
+RLS suite: **52/52 pass** after the fixes (before: 44/48; +4 anon-lock assertions). Also verified on real Postgres: all 5 migrations apply cleanly in order; `audit_log` immutable even for direct UPDATE/DELETE; `auth.users → public.users` sync trigger creates an `employee` profile row.
 
 ---
 

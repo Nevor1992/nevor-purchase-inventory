@@ -62,8 +62,10 @@ Một số phần UI đang có trong prototype nhưng **chưa có bảng** trong
 
 ---
 
-**Trạng thái (cập nhật 18/07/2026):**
-- ✅ Toàn bộ tầng code đã nối xong: login thật, `loadDb()`, sync engine ghi xuống DB, realtime, upload Storage (commit `1bd1fe8`).
-- ✅ Đã xác nhận **network từ môi trường dev tới `https://nyfcrsshruusdpuprvka.supabase.co` thông** (Auth API phản hồi đúng).
-- ✅ App tự nhận diện anon key sai định dạng/placeholder → chạy prototype + banner cảnh báo (không còn lỗi fetch khó hiểu).
-- ⏳ **Đang chờ anon key thật.** Key gửi trong chat đang là placeholder (`<ANON_KEY>`) — vào **Supabase Dashboard → Project Settings → API → `anon public`**, copy chuỗi bắt đầu bằng `eyJ...` (dài ~200 ký tự) và gửi lại. Có key là kiểm thử end-to-end được ngay (login, RLS, realtime).
+**Trạng thái (cập nhật 18/07/2026 — đã có anon key thật):**
+- ✅ Tầng code nối xong: login thật, `loadDb()`, sync engine, realtime, Storage (commit `1bd1fe8`).
+- ✅ Anon key đã xác thực với project thật; migrations `000000–000003` **đã áp trên server** (đủ bảng, trigger auth→users chạy đúng — hồ sơ tự tạo khi signup).
+- ✅ App → Supabase Auth thật hoạt động: đăng nhập trả đúng trạng thái từng trường hợp.
+- 🔴 **Server CHƯA áp `000004_rls_nullsafe.sql`** (vá lộ task bảo mật) **và `000005_lock_anon.sql`** (vá lộ email user/task company cho người chưa đăng nhập — đã tái hiện được trên project thật). Dán 2 file này vào SQL Editor → Run trước khi cho team dùng.
+- ⏳ User UAT `uat.novixwork@cuc.edu.vn` đã tạo (mật khẩu ở chat) nhưng chờ xác nhận email: **Authentication → Users → chọn user → Confirm email** (hoặc tắt "Confirm email" trong Auth settings khi UAT).
+- ℹ️ Cả 2 user hiện là `employee` — cần ít nhất 1 admin: `update public.users set role='admin' where email='...';`
