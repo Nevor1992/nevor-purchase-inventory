@@ -29,10 +29,18 @@ returns boolean language sql security definer stable as $$
   select role in ('admin','ceo') from users where id = auth.uid();
 $$;
 
--- Helper: is current user leader of a dept
+-- Helper: is current user leader of a dept — OR leader of its parent dept
+-- (Growth leader manages sub-teams like Booking KOC / Affiliate).
 create or replace function is_dept_leader(p_dept_id text)
 returns boolean language sql security definer stable as $$
-  select exists(select 1 from departments where id = p_dept_id and leader_id = auth.uid());
+  select exists(
+    select 1 from departments d
+    where d.id = p_dept_id
+      and (
+        d.leader_id = auth.uid()
+        or exists(select 1 from departments p where p.id = d.parent_dept_id and p.leader_id = auth.uid())
+      )
+  );
 $$;
 
 -- Helper: is current user the CEO

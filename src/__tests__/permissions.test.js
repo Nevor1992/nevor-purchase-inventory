@@ -3,6 +3,29 @@ import { __internals } from "../App.jsx";
 
 const { buildSeed, perms, canManage, canViewRequest, isSenderAuthorized, getEligibleApprovers, APPROVER_RULES, canApplyTaskPatch, canCreateTaskFor, canViewProject } = __internals;
 
+// ── Growth division: parent-dept leader manages sub-teams (KOC / Affiliate) ───
+describe("parent-dept leadership (Growth → KOC/Affiliate)", () => {
+  let db2;
+  beforeEach(() => { db2 = buildSeed(); });
+  const kocTask = () => ({ ...db2.tasks[0], deptId: "koc", projectId: null, deleted: false, locked: false });
+
+  it("Growth–Nevro leader (Minh) manages a Booking KOC – Nevro task", () => {
+    const minh = db2.users.find((u) => u.id === "minh"); // leader of 'brand' (Growth–Nevro), parent of 'koc'
+    expect(canManage(db2, minh, kocTask())).toBe(true);
+  });
+
+  it("Growth–UHero leader (Trung) does NOT manage a Nevro KOC task", () => {
+    const trung = db2.users.find((u) => u.id === "trung"); // leader of 'growth_uh', parent of 'koc_uh' only
+    expect(canManage(db2, trung, kocTask())).toBe(false);
+  });
+
+  it("Growth–UHero leader manages a UHero KOC task", () => {
+    const trung = db2.users.find((u) => u.id === "trung");
+    const kocUh = { ...db2.tasks[0], deptId: "koc_uh", projectId: null, deleted: false, locked: false };
+    expect(canManage(db2, trung, kocUh)).toBe(true);
+  });
+});
+
 let db;
 beforeEach(() => { db = buildSeed(); });
 

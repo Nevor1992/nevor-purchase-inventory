@@ -102,12 +102,15 @@ const SEED_DEPTS = [
   ["brand", "Growth – Nevor", "minh", "nevor"], ["growth_uh", "Growth – UHero", "trung", "uhero"],
   ["ecom", "E-commerce – Nevor", "ha", "nevor"], ["ecom_uh", "E-commerce – UHero", "duc", "uhero"],
   ["content", "Content", "linh", null], ["media", "Media", null, null],
-  ["koc", "Booking KOC", "trang", null], ["aff", "TikTok Affiliate", null, null],
+  /* KOC & Affiliate là tổ trực thuộc Growth — mỗi brand có riêng (khác lĩnh vực),
+     Leader Growth của brand (parentDeptId) quản lý. */
+  ["koc", "Booking KOC – Nevor", "trang", "nevor", "brand"], ["aff", "TikTok Affiliate – Nevor", null, "nevor", "brand"],
+  ["koc_uh", "Booking KOC – UHero", null, "uhero", "growth_uh"], ["aff_uh", "TikTok Affiliate – UHero", null, "uhero", "growth_uh"],
   ["cx", "Customer Experience", null, null], ["rnd", "Product/R&D", null, null], ["proc", "Thu mua", null, null],
   ["wh", "Kho", null, null], ["acct", "Kế toán", null, null], ["b2b", "B2B", null, null], ["hr", "Hành chính – Nhân sự", "vy", null],
-].map(([id, name, leaderId, brandId]) => ({ id, name, leaderId, brandId }));
+].map(([id, name, leaderId, brandId, parentDeptId]) => ({ id, name, leaderId, brandId, parentDeptId: parentDeptId || null }));
 /* Người tiếp nhận yêu cầu mặc định cho phòng chưa có Leader — không để request chết vì receiver null */
-const DEFAULT_RECEIVERS = { media: "dat", aff: "huy", cx: "nhung", rnd: "lan", proc: "son", wh: "hoa", acct: "yen", b2b: "quan" };
+const DEFAULT_RECEIVERS = { media: "dat", aff: "huy", koc_uh: "trung", aff_uh: "trung", cx: "nhung", rnd: "lan", proc: "son", wh: "hoa", acct: "yen", b2b: "quan" };
 SEED_DEPTS.forEach((d) => { d.defaultReceiverId = d.leaderId ? null : DEFAULT_RECEIVERS[d.id] || null; });
 
 const SEED_USERS = [
@@ -454,7 +457,13 @@ const deptLeader = (db, deptId) => { const d = deptById(db, deptId); return d?.l
 const involved = (me, t) => [t.ownerId, t.creatorId, t.assignerId, t.approverId, ...(t.collaboratorIds || []), ...(t.allowedViewerIds || [])].includes(me.id);
 const isMgr = (u) => !!u && (u.role === "admin" || u.role === "ceo");
 const isHrLeader = (db, u) => !!u && deptById(db, "hr")?.leaderId === u.id;
-const isDeptLeader = (db, u, deptId) => !!u && u.role === "leader" && u.deptId === deptId;
+const isDeptLeader = (db, u, deptId) => {
+  if (!u || u.role !== "leader") return false;
+  if (u.deptId === deptId) return true;
+  /* Leader phòng cha (vd Growth) quản luôn tổ trực thuộc (vd Booking KOC, Affiliate) */
+  const d = deptById(db, deptId);
+  return !!(d && d.parentDeptId) && u.deptId === d.parentDeptId;
+};
 const isProjOwner = (db, u, t) => !!t.projectId && projById(db, t.projectId)?.ownerId === u.id;
 const inProject = (db, u, projectId) => { const p = projById(db, projectId); return !!p && (p.ownerId === u.id || (p.watcherIds || []).includes(u.id) || p.deptIds.includes(u.deptId)); };
 /* quyền quản lý task = leader phòng sở hữu / project owner / admin / ceo */

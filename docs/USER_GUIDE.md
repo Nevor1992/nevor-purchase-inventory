@@ -30,6 +30,8 @@
 
 **Vì sao:** phân quyền để **người ta chỉ thấy việc liên quan** — vừa gọn (không nhiễu), vừa an toàn (dữ liệu nhạy cảm không lộ). App chặn quyền ở **tầng dữ liệu**, không chỉ ẩn nút; nên kể cả biết đường link cũng không mở được việc ngoài phạm vi.
 
+**Cấu trúc theo brand & tổ trực thuộc:** mỗi brand (Nevor, UHero) có khối **Growth** riêng; **Booking KOC** và **TikTok Affiliate** là **tổ trực thuộc Growth** của từng brand (khác lĩnh vực). **Leader Growth của brand quản lý** luôn KOC & Affiliate của brand đó (duyệt/xem được), bên cạnh team‑lead của từng tổ. *Vì sao:* phản ánh đúng sơ đồ tổ chức và để việc của KOC/Affiliate luôn có người cấp trên điều phối.
+
 ---
 
 ## 2. Đăng nhập & tổng quan màn hình
