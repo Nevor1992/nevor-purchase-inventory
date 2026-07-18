@@ -160,13 +160,26 @@ export function subscribeRealtime(onRemoteChange) {
   return () => supabase.removeChannel(channel);
 }
 
-/* ---------------- storage: real file upload ---------------- */
+/* ---------------- storage: real file upload (private bucket) ----------------
+   Bucket "attachments" is private. A file is addressed by its storage PATH
+   (`taskId/timestamp_name`) and viewed through short-lived signed URLs minted
+   on demand — never a public URL. Storage RLS (migration 000007) mirrors
+   perms.attach / perms.view. We persist the PATH in task_attachments.url so a
+   signed URL can be regenerated any time. */
 export async function uploadAttachment(file, taskId) {
-  const path = `${taskId}/${Date.now()}_${file.name}`;
-  const { error } = await supabase.storage.from("attachments").upload(path, file);
+  const safeName = (file.name || "file").replace(/[^\w.\-]+/g, "_");
+  const path = `${taskId}/${Date.now()}_${safeName}`;
+  const { error } = await supabase.storage.from("attachments").upload(path, file, { upsert: false });
   if (error) return { ok: false, msg: error.message };
-  const { data } = supabase.storage.from("attachments").getPublicUrl(path);
-  return { ok: true, url: data.publicUrl, path };
+  return { ok: true, path };
+}
+
+/* Mint a short-lived signed URL to view/download a private attachment. */
+export async function signedAttachmentUrl(path, expiresInSec = 120) {
+  if (!path) return { ok: false, msg: "Thiếu đường dẫn file" };
+  const { data, error } = await supabase.storage.from("attachments").createSignedUrl(path, expiresInSec);
+  if (error) return { ok: false, msg: error.message };
+  return { ok: true, url: data.signedUrl };
 }
 
 /* ---------------- admin: tạo tài khoản nhân sự qua Edge Function ----------------

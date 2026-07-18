@@ -11,7 +11,7 @@ import { btnPri, btnSec, btnGhost, btnDanger, inputCls, cardCls, popoverCls, STA
 import { PageHeader, Skeleton, SkeletonRows, DeadlineChip, Dot, Tooltip, ErrorBoundary } from "./ui/primitives.jsx";
 import { SUPABASE_ENABLED, SUPABASE_CONFIG_ERROR } from "./lib/supabase.js";
 import { signIn, signOut, getSession, onAuthChange } from "./lib/auth.js";
-import { loadDb, syncChanges, subscribeRealtime, adminCreateUser } from "./lib/db.js";
+import { loadDb, syncChanges, subscribeRealtime, adminCreateUser, uploadAttachment, signedAttachmentUrl } from "./lib/db.js";
 
 /* ============================================================
    NOVIX WORK — Quản lý công việc nội bộ v0.2.0-uat-prep
@@ -1050,7 +1050,7 @@ function TaskDrawer({ taskId, onClose }) {
                 {!t.reportLink && !t.driveLink && !t.attachments.length && <p className="text-xs text-zinc-300">Chưa có liên kết</p>}
               </>
             )}
-            {t.attachments.map((a) => <p key={a.id} className="flex items-center gap-2 text-[13px] text-zinc-600"><Paperclip className="h-3.5 w-3.5 text-zinc-400" />{a.name}</p>)}
+            {t.attachments.map((a) => <AttachmentRow key={a.id} a={a} />)}
             {canAttach && <AttachAdder taskId={t.id} />}
           </div>
           {t.tags.length > 0 && !editing && <div className="mb-4 flex flex-wrap gap-1.5">{t.tags.map((tg) => <span key={tg} className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-500">#{tg}</span>)}</div>}
@@ -1187,21 +1187,70 @@ function CollabPicker({ t }) {
     </div>
   );
 }
+const ATTACH_EXT = ["pdf", "png", "jpg", "jpeg", "xlsx", "docx", "pptx", "csv", "zip", "mp4", "txt"];
+/* Một dòng file đính kèm. Bản Supabase (a.url = storage path) → bấm để mở qua
+   signed URL tạm thời; demo in-memory → chỉ hiện tên. */
+function AttachmentRow({ a }) {
+  const { toast } = useApp();
+  const [busy, setBusy] = useState(false);
+  const canOpen = SUPABASE_ENABLED && a.url;
+  const open = async () => {
+    setBusy(true);
+    const r = await signedAttachmentUrl(a.url);
+    setBusy(false);
+    if (!r.ok) { toast(`Không mở được file: ${r.msg}`, "err"); return; }
+    window.open(r.url, "_blank", "noopener");
+  };
+  if (!canOpen) return <p className="flex items-center gap-2 text-[13px] text-zinc-600"><Paperclip className="h-3.5 w-3.5 text-zinc-400" />{a.name}</p>;
+  return (
+    <button onClick={open} disabled={busy} className="flex items-center gap-2 text-[13px] text-zinc-700 hover:underline disabled:opacity-50">
+      <Paperclip className="h-3.5 w-3.5 text-zinc-400" />{a.name}<ExternalLink className="h-3 w-3 text-zinc-300" />
+    </button>
+  );
+}
 function AttachAdder({ taskId }) {
   const { act, toast } = useApp();
   const [v, setV] = useState("");
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
+  /* demo in-memory: gõ tên file (không có Storage) */
   const add = () => {
     if (!v.trim()) return;
     const r = act.addAttachment(taskId, { name: v.trim(), size: Math.round(Math.random() * 5e6), mime: "" });
     if (!r.ok) { toast(r.msg, "err"); return; }
     setV(""); setOpen(false);
   };
+  /* bản Supabase: chọn file thật → upload lên Storage → lưu path */
+  const onPick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    if (!ATTACH_EXT.includes(ext)) { toast(`Không hỗ trợ .${ext} — chỉ nhận: ${ATTACH_EXT.join(", ")}`, "err"); return; }
+    if (file.size > 25 * 1024 * 1024) { toast("File vượt 25MB", "err"); return; }
+    setBusy(true);
+    const up = await uploadAttachment(file, taskId);
+    setBusy(false);
+    if (!up.ok) { toast(`Tải lên lỗi: ${up.msg}`, "err"); return; }
+    const r = act.addAttachment(taskId, { name: file.name, size: file.size, mime: file.type, url: up.path });
+    if (!r.ok) { toast(r.msg, "err"); return; }
+    toast("Đã đính kèm file"); setOpen(false);
+  };
+  if (SUPABASE_ENABLED) {
+    return (
+      <div>
+        <input ref={fileRef} type="file" className="hidden" onChange={onPick} accept={ATTACH_EXT.map((e) => "." + e).join(",")} />
+        <button className={btnGhost} disabled={busy} onClick={() => fileRef.current?.click()}><Paperclip className="h-3 w-3" />{busy ? "Đang tải lên…" : "Đính kèm file"}</button>
+        <p className="mt-1 text-[10px] text-zinc-400">Chỉ nhận {ATTACH_EXT.join(", ")} · tối đa 25MB · lưu riêng tư, mở bằng link tạm thời</p>
+      </div>
+    );
+  }
   if (!open) return <button className={btnGhost} onClick={() => setOpen(true)}><Paperclip className="h-3 w-3" />Đính kèm file</button>;
   return (
     <div>
-      <input className={inputCls} placeholder="Tên file kèm đuôi, vd: bao-cao.pdf (demo — bản Supabase upload thật + signed URL)" value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
-      <p className="mt-1 text-[10px] text-zinc-400">Chỉ nhận pdf, png, jpg, xlsx, docx, pptx, csv, zip, mp4, txt · tối đa 25MB · file trong task mật không có URL công khai</p>
+      <input className={inputCls} placeholder="Tên file kèm đuôi, vd: bao-cao.pdf (demo in-memory)" value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
+      <p className="mt-1 text-[10px] text-zinc-400">Demo in-memory — bản Supabase tải file thật lên Storage.</p>
     </div>
   );
 }
@@ -3525,7 +3574,8 @@ export default function App() {
       const ALLOWED = ["pdf", "png", "jpg", "jpeg", "xlsx", "docx", "pptx", "csv", "zip", "mp4", "txt"];
       if (!ALLOWED.includes(ext)) return { ok: false, msg: `Không hỗ trợ .${ext} — chỉ nhận: ${ALLOWED.join(", ")}` };
       if (file.size && file.size > 25 * 1024 * 1024) return { ok: false, msg: "File vượt 25MB" };
-      setDb((prev) => mapTask(prev, id, (x) => withLog({ ...x, attachments: [...x.attachments, { id: uid("f"), name: file.name, size: file.size || 0, mime: file.mime || "", by: meId, at: Date.now(), confidential: x.isConfidential }] }, meId, `đính kèm file: ${file.name}`, { action: "attach" })));
+      /* file.url = storage path (bản Supabase, đã upload xong); demo in-memory thì rỗng */
+      setDb((prev) => mapTask(prev, id, (x) => withLog({ ...x, attachments: [...x.attachments, { id: uid("f"), name: file.name, size: file.size || 0, mime: file.mime || "", url: file.url || "", by: meId, at: Date.now(), confidential: x.isConfidential }] }, meId, `đính kèm file: ${file.name}`, { action: "attach" })));
       return { ok: true };
     },
     deleteTask: (id) => {
