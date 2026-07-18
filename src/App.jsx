@@ -2091,28 +2091,32 @@ function ProjectsPage() {
   const { db, me, nav, act, toast } = useApp();
   const [creating, setCreating] = useState(false);
   const canCreate = ["admin", "ceo", "leader"].includes(me.role);
+  const EFFORT_W = { S: 1, M: 2, L: 4 };
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-zinc-900">Dự án</h1>
-        {canCreate && <button className={btnPri} onClick={() => setCreating(true)}><Plus className="h-4 w-4" />Tạo dự án</button>}
-      </div>
+      <PageHeader title="Dự án" desc="Mục tiêu liên phòng ban — tiến độ theo trọng số công việc." actions={canCreate && <button className={btnPri} onClick={() => setCreating(true)}><Plus className="h-4 w-4" />Tạo dự án</button>} />
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
         {db.projects.filter((p) => !p.deleted).map((p) => {
           const pts = db.tasks.filter((t) => !t.deleted && t.projectId === p.id);
-          const done = pts.filter((t) => t.status === "done").length;
-          const pct = pts.length ? Math.round((done / pts.length) * 100) : 0;
+          const totalW = pts.reduce((s, t) => s + (EFFORT_W[t.effort] ?? 1), 0);
+          const doneW = pts.filter((t) => t.status === "done").reduce((s, t) => s + (EFFORT_W[t.effort] ?? 1), 0);
+          const pct = totalW ? Math.round((doneW / totalW) * 100) : 0;
+          const blockers = (p.issues || []).filter((i) => !i.resolved && i.status !== "RESOLVED").length;
+          const dl = deadlineMeta({ deadline: p.deadline, status: p.status === "done" ? "done" : "doing" });
           return (
-            <button key={p.id} onClick={() => nav("projectDetail", { id: p.id })} className="rounded-xl border border-zinc-100 bg-white p-4 text-left hover:border-zinc-200 hover:shadow-sm transition-all">
+            <button key={p.id} onClick={() => nav("projectDetail", { id: p.id })} className="rounded-xl border border-zinc-200 bg-white p-4 text-left transition-all hover:border-zinc-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/15">
               <div className="mb-1.5 flex items-start justify-between gap-2">
                 <p className="text-sm font-semibold text-zinc-800 leading-snug">{p.name} <BrandChip id={p.brandId} /></p>
                 <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${PROJECT_STATUSES[p.status].pill}`}>{PROJECT_STATUSES[p.status].label}</span>
               </div>
               <p className="mb-2.5 text-xs text-zinc-400 line-clamp-2">{p.goal}</p>
-              <div className="flex items-center gap-2 mb-2"><ProgressBar v={pct} /><span className="text-[11px] text-zinc-400 whitespace-nowrap">{pct}%</span></div>
+              <div className="mb-2 flex items-center gap-2"><ProgressBar v={pct} /><span className="text-[11px] tabular-nums text-zinc-500 whitespace-nowrap">{pct}%</span></div>
               <div className="flex items-center justify-between text-[11px] text-zinc-400">
                 <span className="inline-flex items-center gap-1.5"><Avatar id={p.ownerId} size={6} />{userById(db, p.ownerId)?.name}</span>
-                <span>Hạn {fmtD(p.deadline)} · {pts.length} task</span>
+                <span className="flex items-center gap-2">
+                  <span className={dl.cls}>Hạn {fmtD(p.deadline)}</span>
+                  {blockers > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-1.5 py-0.5 font-medium text-red-600"><AlertTriangle className="h-3 w-3" />{blockers}</span>}
+                </span>
               </div>
             </button>
           );
