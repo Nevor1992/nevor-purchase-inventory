@@ -1345,7 +1345,9 @@ function TaskForm({ onClose, defaults = {} }) {
   const { db, me, act, toast } = useApp();
   const [more, setMore] = useState(false);
   const [f, setF] = useState({
-    name: "", ownerId: me.role === "employee" ? me.id : null, deadline: D(3), deptId: defaults.deptId || me.deptId,
+    name: "", ownerId: me.role === "employee" ? me.id : null, deadline: D(3),
+    /* admin/CEO không thuộc phòng nào → mặc định phòng đầu tiên (chọn lại được), khỏi kẹt nút tạo */
+    deptId: defaults.deptId || me.deptId || (["admin", "ceo"].includes(me.role) ? (db.depts[0]?.id || "") : ""),
     status: "todo", priority: "normal", desc: "", deliverable: "", acceptance: "", approverId: null, collaboratorIds: [],
     projectId: defaults.projectId || null, type: defaults.projectId ? "project" : "dept", effort: "M",
     reportLink: "", tags: "", recurrence: "", start: todayISO(), noDeadline: false, brandId: defaults.brandId ?? null,
@@ -1369,7 +1371,17 @@ function TaskForm({ onClose, defaults = {} }) {
   return (
     <Modal title="Tạo công việc" onClose={() => onClose(null)} wide>
       <Field label="Tên công việc" req><input autoFocus className={inputCls} value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Ví dụ: Hoàn thiện brief KOC cho đai lưng" /></Field>
-      {/* Quick create — chỉ 3 trường cốt lõi; phần còn lại nằm trong "Thêm chi tiết" */}
+      {/* Phòng ban là trường BẮT BUỘC — hiện ngay khi người tạo có quyền chọn nhiều phòng
+          (admin/CEO) hoặc chưa có phòng nào được chọn, để không bị kẹt nút tạo. */}
+      {(allowedDepts.length > 1 || !f.deptId) && (
+        <Field label="Phòng ban phụ trách" req>
+          <select className={inputCls} value={f.deptId || ""} onChange={(e) => set("deptId", e.target.value)}>
+            {!f.deptId && <option value="">— Chọn phòng ban —</option>}
+            {allowedDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+        </Field>
+      )}
+      {/* Quick create — 3 trường cốt lõi; phần còn lại nằm trong "Thêm chi tiết" */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-3">
         <Field label="Người chịu trách nhiệm" req={!isPersonal}><UserSelect value={f.ownerId} onChange={(v) => set("ownerId", v)} users={assignList} placeholder="— Chưa có —" />{me.role === "employee" && !proj && <p className="mt-1 text-[10px] text-zinc-400">Nhân viên tạo task cho chính mình. Cần phòng khác xử lý → dùng Yêu cầu phối hợp.</p>}</Field>
         <Field label="Deadline" req={!isPersonal}>
@@ -1383,7 +1395,7 @@ function TaskForm({ onClose, defaults = {} }) {
       ) : (
         <div className="border-t border-zinc-100 pt-3 mt-1">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3">
-            <Field label="Phòng ban" req><select className={inputCls} value={f.deptId} onChange={(e) => set("deptId", e.target.value)}>{allowedDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
+            {!(allowedDepts.length > 1 || !f.deptId) && <Field label="Phòng ban" req><select className={inputCls} value={f.deptId} onChange={(e) => set("deptId", e.target.value)}>{allowedDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>}
             <Field label="Brand">{deptBrand(db, f.deptId) ? (
               <p className="flex items-center gap-1.5 pt-1.5 text-xs text-zinc-500"><BrandChip id={deptBrand(db, f.deptId)} /> theo phòng ban</p>
             ) : (
@@ -1412,7 +1424,10 @@ function TaskForm({ onClose, defaults = {} }) {
         </div>
       )}
       {!chk.ok && <p className="mb-2 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-700">{chk.msg}</p>}
-      {chk.ok && !f.deptId && <p className="mb-2 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-700">Tài khoản của bạn chưa được gán phòng ban — liên hệ Admin/HR để thêm vào phòng trước khi tạo công việc.</p>}
+      {chk.ok && !valid && (() => {
+        const miss = [!f.name.trim() && "Tên công việc", !f.deptId && "Phòng ban", !isPersonal && !f.ownerId && "Người chịu trách nhiệm", !isPersonal && !f.noDeadline && !f.deadline && "Deadline"].filter(Boolean);
+        return miss.length ? <p className="mb-2 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-700">Còn thiếu (bắt buộc): <b>{miss.join(" · ")}</b>. Điền đủ các mục này là tạo được.</p> : null;
+      })()}
       <div className="mt-3 flex justify-end gap-2 border-t border-zinc-100 pt-3">
         <button className={btnSec} onClick={() => onClose(null)}>Hủy</button>
         <button className={btnPri} disabled={!valid} onClick={submit}><Plus className="h-4 w-4" />Tạo công việc</button>
