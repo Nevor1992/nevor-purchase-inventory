@@ -19,9 +19,18 @@ const urlValid = typeof url === "string" &&
    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(url.trim())); /* supabase CLI local dev */
 const anonValid = typeof anon === "string" && /^(eyJ[\w-]+\.[\w-]+\.[\w-]+|sb_[\w-]+)$/.test(anon.trim());
 
-export const SUPABASE_ENABLED = urlValid && anonValid;
+/* Demo mode override: `?demo=1` (or `?demo`) in the URL forces the in-memory
+   prototype with seed data even on a Supabase-configured build. Lets one
+   deployment serve both the real app (login) and a no-login demo for training
+   — link: https://<host>/?demo=1 . Query string survives hash routing. */
+export const DEMO_FORCED = typeof window !== "undefined"
+  && new URLSearchParams(window.location.search).has("demo");
 
-export const SUPABASE_CONFIG_ERROR = (url || anon) && !SUPABASE_ENABLED
+export const SUPABASE_ENABLED = urlValid && anonValid && !DEMO_FORCED;
+
+/* Chỉ báo lỗi khi CẤU HÌNH thật sự sai — KHÔNG phụ thuộc cờ demo (nếu không,
+   link ?demo=1 trên bản production hợp lệ sẽ hiện cảnh báo placeholder sai). */
+export const SUPABASE_CONFIG_ERROR = (url || anon) && !(urlValid && anonValid)
   ? (!urlValid
       ? "VITE_SUPABASE_URL không hợp lệ (cần dạng https://<project>.supabase.co)."
       : "VITE_SUPABASE_ANON_KEY không đúng định dạng — có vẻ vẫn là placeholder. Dán anon key thật từ Supabase → Project Settings → API.")

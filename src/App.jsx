@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { btnPri, btnSec, btnGhost, btnDanger, inputCls, cardCls, popoverCls, STATUS_TONE, PRIORITY_TONE } from "./ui/tokens.js";
 import { PageHeader, Skeleton, SkeletonRows, DeadlineChip, Dot, Tooltip, ErrorBoundary } from "./ui/primitives.jsx";
-import { SUPABASE_ENABLED, SUPABASE_CONFIG_ERROR } from "./lib/supabase.js";
+import { SUPABASE_ENABLED, SUPABASE_CONFIG_ERROR, DEMO_FORCED } from "./lib/supabase.js";
 import { signIn, signOut, getSession, onAuthChange } from "./lib/auth.js";
 import { loadDb, syncChanges, subscribeRealtime, adminCreateUser, adminSetUserStatus, uploadAttachment, signedAttachmentUrl } from "./lib/db.js";
 
@@ -3125,6 +3125,11 @@ function LoginScreen({ onLogin }) {
         {SUPABASE_CONFIG_ERROR && (
           <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
             ⚠ {SUPABASE_CONFIG_ERROR} Đang chạy chế độ demo in-memory (dữ liệu mất khi refresh).
+          </p>
+        )}
+        {DEMO_FORCED && (
+          <p className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-700">
+            🎓 <b>Bản demo đào tạo</b> — dữ liệu mẫu có sẵn, thao tác thoải mái. Mọi thay đổi chỉ trong trình duyệt của bạn và sẽ reset khi tải lại trang. Chọn một nhân vật bên dưới để trải nghiệm theo từng vai trò.
           </p>
         )}
         <div className="rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm">
