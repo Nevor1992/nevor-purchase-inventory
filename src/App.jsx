@@ -11,7 +11,7 @@ import { btnPri, btnSec, btnGhost, btnDanger, inputCls, cardCls, popoverCls, STA
 import { PageHeader, Skeleton, SkeletonRows, DeadlineChip, Dot, Tooltip, ErrorBoundary } from "./ui/primitives.jsx";
 import { SUPABASE_ENABLED, SUPABASE_CONFIG_ERROR, DEMO_FORCED } from "./lib/supabase.js";
 import { signIn, signOut, getSession, onAuthChange } from "./lib/auth.js";
-import { loadDb, syncChanges, subscribeRealtime, adminCreateUser, adminSetUserStatus, uploadAttachment, signedAttachmentUrl } from "./lib/db.js";
+import { loadDb, syncChanges, subscribeRealtime, adminCreateUser, adminSetUserStatus, uploadAttachment, signedAttachmentUrl, saveDepartment, saveRoleLabels } from "./lib/db.js";
 import { toCsv, downloadFile, stampName } from "./lib/export.js";
 
 /* ============================================================
@@ -95,6 +95,9 @@ const PROJECT_STATUSES = {
 
 const DOC_TYPES = ["File báo cáo phòng ban", "File KPI", "SOP", "Biểu mẫu", "File kế hoạch", "Google Drive", "Google Sheets", "Tài liệu hướng dẫn"];
 const ROLE_LABELS = { employee: "Nhân viên", leader: "Leader", admin: "Manager/Admin", ceo: "CEO" };
+const ROLE_KEYS = ["employee", "leader", "admin", "ceo"];
+/* Nhãn vai trò có thể tùy chỉnh (db.roleLabels), fallback về mặc định. */
+const rlabel = (db, role) => (db && db.roleLabels && db.roleLabels[role]) || ROLE_LABELS[role] || role;
 const BRANDS = {
   nevor: { label: "Nevor", chip: "bg-indigo-50 text-indigo-700 border-indigo-100" },
   uhero: { label: "UHero", chip: "bg-orange-50 text-orange-700 border-orange-100" },
@@ -453,6 +456,9 @@ const useApp = () => useContext(Ctx);
 
 const userById = (db, id) => db.users.find((u) => u.id === id) || null;
 const deptById = (db, id) => db.depts.find((d) => d.id === id) || null;
+/* Phòng ban đang hoạt động — dùng cho các ô CHỌN khi giao việc/thêm người/yêu cầu.
+   (Bảng quản trị vẫn hiện đủ cả phòng đã ẩn để bật lại.) */
+const activeDepts = (db) => db.depts.filter((d) => d.active !== false);
 const projById = (db, id) => db.projects.find((p) => p.id === id) || null;
 const deptLeader = (db, deptId) => { const d = deptById(db, deptId); return d?.leaderId ? userById(db, d.leaderId) : null; };
 
@@ -1348,7 +1354,7 @@ function TaskForm({ onClose, defaults = {} }) {
   const [f, setF] = useState({
     name: "", ownerId: me.role === "employee" ? me.id : null, deadline: D(3),
     /* admin/CEO không thuộc phòng nào → mặc định phòng đầu tiên (chọn lại được), khỏi kẹt nút tạo */
-    deptId: defaults.deptId || me.deptId || (["admin", "ceo"].includes(me.role) ? (db.depts[0]?.id || "") : ""),
+    deptId: defaults.deptId || me.deptId || (["admin", "ceo"].includes(me.role) ? (activeDepts(db)[0]?.id || "") : ""),
     status: "todo", priority: "normal", desc: "", deliverable: "", acceptance: "", approverId: null, collaboratorIds: [],
     projectId: defaults.projectId || null, type: defaults.projectId ? "project" : "dept", effort: "M",
     reportLink: "", tags: "", recurrence: "", start: todayISO(), noDeadline: false, brandId: defaults.brandId ?? null,
@@ -1358,7 +1364,7 @@ function TaskForm({ onClose, defaults = {} }) {
   const isPersonal = f.type === "personal";
   /* Phòng ban được phép tạo: employee/leader → phòng mình (+ phạm vi dự án nếu là owner); admin/ceo → tất cả */
   const proj = f.projectId ? projById(db, f.projectId) : null;
-  const allowedDepts = ["admin", "ceo"].includes(me.role) ? db.depts
+  const allowedDepts = ["admin", "ceo"].includes(me.role) ? activeDepts(db)
     : proj && proj.ownerId === me.id ? db.depts.filter((d) => proj.deptIds.includes(d.id) || d.id === me.deptId)
     : db.depts.filter((d) => d.id === me.deptId);
   const assignList = assignableUsers(db, me, { deptId: f.deptId, projectId: f.projectId });
@@ -1880,7 +1886,7 @@ function Dashboard() {
 
   return (
     <div>
-      <PageHeader title={`${hello}, ${me.name}`} desc={`${fmtDFull(todayISO())} · ${ROLE_LABELS[me.role]} · ${deptById(db, me.deptId)?.name}`} />
+      <PageHeader title={`${hello}, ${me.name}`} desc={`${fmtDFull(todayISO())} · ${rlabel(db, me.role)} · ${deptById(db, me.deptId)?.name}`} />
 
       {/* Pinned */}
       <div className="mb-4 rounded-xl border border-zinc-100 bg-white p-4">
@@ -2224,7 +2230,7 @@ function ProjectForm({ onClose }) {
       <Field label="Brand"><select className={inputCls} value={f.brandId || ""} onChange={(e) => set("brandId", e.target.value || null)}><option value="">Chung (cả 2 brand)</option>{BRAND_ORDER.map((b) => <option key={b} value={b}>{BRANDS[b].label}</option>)}</select></Field>
       <Field label="Phòng ban tham gia">
         <div className="flex flex-wrap gap-1.5">
-          {db.depts.map((d) => <button key={d.id} onClick={() => set("deptIds", f.deptIds.includes(d.id) ? f.deptIds.filter((x) => x !== d.id) : [...f.deptIds, d.id])} className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${f.deptIds.includes(d.id) ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-500"}`}>{d.name}</button>)}
+          {activeDepts(db).map((d) => <button key={d.id} onClick={() => set("deptIds", f.deptIds.includes(d.id) ? f.deptIds.filter((x) => x !== d.id) : [...f.deptIds, d.id])} className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${f.deptIds.includes(d.id) ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-500"}`}>{d.name}</button>)}
         </div>
       </Field>
       <Field label="Link file kế hoạch"><input className={inputCls} value={f.planLink} onChange={(e) => set("planLink", e.target.value)} placeholder="https://…" /></Field>
@@ -2462,7 +2468,7 @@ function RequestForm({ onClose }) {
       <Field label="Tiêu đề" req><input className={inputCls} value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="Ví dụ: Cung cấp thông tin sản phẩm mới" /></Field>
       <Field label="Nội dung yêu cầu" req><textarea className={inputCls} rows={3} value={f.content} onChange={(e) => set("content", e.target.value)} /></Field>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3">
-        <Field label="Phòng ban nhận" req><select className={inputCls} value={f.toDeptId} onChange={(e) => set("toDeptId", e.target.value)}><option value="">— Chọn —</option>{db.depts.filter((d) => d.id !== me.deptId).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
+        <Field label="Phòng ban nhận" req><select className={inputCls} value={f.toDeptId} onChange={(e) => set("toDeptId", e.target.value)}><option value="">— Chọn —</option>{activeDepts(db).filter((d) => d.id !== me.deptId).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
         {f.toDeptId === "hr" && <Field label="Loại yêu cầu nhân sự"><select className={inputCls} value={f.reqType || ""} onChange={(e) => { const v = e.target.value; setF((x) => ({ ...x, reqType: v, isConfidential: ["Xác nhận hồ sơ", "Nghỉ phép", "Chính sách/Phúc lợi"].includes(v) ? true : x.isConfidential })); }}><option value="">— Chọn loại —</option>{["Xác nhận hồ sơ", "Nghỉ phép", "Trang thiết bị", "Chính sách/Phúc lợi", "Khác"].map((x) => <option key={x} value={x}>{x}</option>)}</select></Field>}
         <Field label="Mức độ ưu tiên"><select className={inputCls} value={f.priority} onChange={(e) => set("priority", e.target.value)}>{PRIORITY_ORDER.map((p) => <option key={p} value={p}>{PRIORITIES[p].label}</option>)}</select></Field>
         <Field label="Deadline đề xuất" req><input type="date" className={inputCls} value={f.proposedDeadline} onChange={(e) => set("proposedDeadline", e.target.value)} /></Field>
@@ -2774,6 +2780,7 @@ function AdminPage() {
   const [addMember, setAddMember] = useState(false);
   const [userAction, setUserAction] = useState(null); // {userId, name, action}
   const [actBusy, setActBusy] = useState(false);
+  const [deptModal, setDeptModal] = useState(null); // {id?, name, brandId, parentDeptId}
   if (!["admin", "ceo"].includes(me.role)) return <EmptyState icon={Settings} title="Chỉ Manager/Admin hoặc CEO truy cập được khu vực này" />;
   const ACTION_META = {
     disable: { title: "Vô hiệu hoá tài khoản", verb: "vô hiệu hoá", note: "Người này sẽ KHÔNG đăng nhập được nữa, nhưng dữ liệu & lịch sử vẫn giữ. Có thể kích hoạt lại bất cứ lúc nào.", btn: "Vô hiệu hoá", danger: false },
@@ -2807,7 +2814,7 @@ function AdminPage() {
                   <td className="px-3 py-2"><span className="inline-flex items-center gap-2"><Avatar id={u.id} size={7} /><span className="text-[13px] font-medium text-zinc-800">{u.name}</span></span></td>
                   <td className="px-3 py-2 text-[13px] text-zinc-500">{u.title}</td>
                   <td className="px-3 py-2"><select className="rounded-lg border border-zinc-200 px-2 py-1 text-xs" value={u.deptId} onChange={(e) => { act.adminUpdateUser(u.id, { deptId: e.target.value }); toast("Đã chuyển phòng ban"); }}>{db.depts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></td>
-                  <td className="px-3 py-2"><select className="rounded-lg border border-zinc-200 px-2 py-1 text-xs" value={u.role} disabled={u.role === "ceo" && me.role !== "ceo"} onChange={(e) => setRoleModal({ userId: u.id, role: e.target.value, reason: "" })}>{Object.entries(ROLE_LABELS).filter(([k]) => k !== "ceo" || me.role === "ceo" || u.role === "ceo").map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></td>
+                  <td className="px-3 py-2"><select className="rounded-lg border border-zinc-200 px-2 py-1 text-xs" value={u.role} disabled={u.role === "ceo" && me.role !== "ceo"} onChange={(e) => setRoleModal({ userId: u.id, role: e.target.value, reason: "" })}>{ROLE_KEYS.filter((k) => k !== "ceo" || me.role === "ceo" || u.role === "ceo").map((k) => <option key={k} value={k}>{rlabel(db, k)}</option>)}</select></td>
                   <td className="px-3 py-2">{inactive ? <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] text-red-600">Đã vô hiệu hoá</span> : <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-600">Đang hoạt động</span>}</td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
                     {canManage && (inactive
@@ -2823,20 +2830,32 @@ function AdminPage() {
         </div>
       )}
       {tab === "depts" && (
-        <div className="rounded-xl border border-zinc-100 bg-white overflow-x-auto">
-          <table className="w-full min-w-[560px] text-sm">
-            <thead className="border-b border-zinc-100 bg-zinc-50/60"><tr>{["Phòng ban", "Leader", "Nhân sự", "Task đang chạy"].map((h) => <th key={h} className="px-3 py-2 text-left text-[11px] font-medium uppercase text-zinc-400">{h}</th>)}</tr></thead>
-            <tbody>
-              {db.depts.map((d) => (
-                <tr key={d.id} className="border-b border-zinc-50 last:border-0">
-                  <td className="px-3 py-2 text-[13px] font-medium text-zinc-800">{d.name}</td>
-                  <td className="px-3 py-2"><select className="rounded-lg border border-zinc-200 px-2 py-1 text-xs" value={d.leaderId || ""} onChange={(e) => { act.adminUpdateDept(d.id, { leaderId: e.target.value || null }); toast("Đã đổi leader"); }}><option value="">— Admin phụ trách —</option>{db.users.filter((u) => u.deptId === d.id).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></td>
-                  <td className="px-3 py-2 text-[13px] text-zinc-500">{db.users.filter((u) => u.deptId === d.id).length}</td>
-                  <td className="px-3 py-2 text-[13px] text-zinc-500">{db.tasks.filter((t) => !t.deleted && t.deptId === d.id && t.status !== "done").length}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-[13px] text-zinc-500">{activeDepts(db).length} phòng ban đang hoạt động{db.depts.length > activeDepts(db).length ? ` · ${db.depts.length - activeDepts(db).length} đã ẩn` : ""}</p>
+            <button className={btnPri} onClick={() => setDeptModal({ name: "", brandId: "", parentDeptId: "" })}><Plus className="h-4 w-4" />Thêm phòng ban</button>
+          </div>
+          <div className="rounded-xl border border-zinc-100 bg-white overflow-x-auto">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead className="border-b border-zinc-100 bg-zinc-50/60"><tr>{["Phòng ban", "Brand", "Leader", "Nhân sự", "Task đang chạy", ""].map((h, i) => <th key={i} className="px-3 py-2 text-left text-[11px] font-medium uppercase text-zinc-400">{h}</th>)}</tr></thead>
+              <tbody>
+                {db.depts.map((d) => { const off = d.active === false; return (
+                  <tr key={d.id} className={`border-b border-zinc-50 last:border-0 ${off ? "opacity-55" : ""}`}>
+                    <td className="px-3 py-2 text-[13px] font-medium text-zinc-800">{d.name}{d.parentDeptId && <span className="ml-1.5 text-[11px] font-normal text-zinc-400">↳ {deptById(db, d.parentDeptId)?.name}</span>}{off && <span className="ml-1.5 rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500">đã ẩn</span>}</td>
+                    <td className="px-3 py-2">{d.brandId ? <BrandChip id={d.brandId} /> : <span className="text-[11px] text-zinc-400">Chung</span>}</td>
+                    <td className="px-3 py-2"><select className="rounded-lg border border-zinc-200 px-2 py-1 text-xs" value={d.leaderId || ""} onChange={(e) => { act.adminUpdateDept(d.id, { leaderId: e.target.value || null }); toast("Đã đổi leader"); }}><option value="">— Admin phụ trách —</option>{db.users.filter((u) => u.deptId === d.id).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></td>
+                    <td className="px-3 py-2 text-[13px] text-zinc-500">{db.users.filter((u) => u.deptId === d.id).length}</td>
+                    <td className="px-3 py-2 text-[13px] text-zinc-500">{db.tasks.filter((t) => !t.deleted && t.deptId === d.id && t.status !== "done").length}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      <button className={btnGhost} onClick={() => setDeptModal({ id: d.id, name: d.name, brandId: d.brandId || "", parentDeptId: d.parentDeptId || "" })}>Sửa</button>
+                      <button className={btnGhost} onClick={() => { const r = act.adminSetDeptActive(d.id, off); toast(r.ok ? (off ? "Đã bật lại" : "Đã ẩn phòng ban") : r.msg, r.ok ? "ok" : "err"); }}>{off ? "Bật lại" : "Ẩn"}</button>
+                    </td>
+                  </tr>
+                ); })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-zinc-400">Ẩn phòng ban không xoá dữ liệu cũ — chỉ ngừng cho chọn khi giao việc/thêm người mới. Bật lại bất cứ lúc nào.</p>
         </div>
       )}
       {tab === "recurring" && (
@@ -2890,7 +2909,7 @@ function AdminPage() {
           {(db.roleLogs || []).length === 0 && <p className="p-4 text-xs text-zinc-300">Chưa có thay đổi vai trò nào. Mọi thay đổi sẽ được ghi lại vĩnh viễn tại đây.</p>}
           {(db.roleLogs || []).map((l) => (
             <div key={l.id} className="px-4 py-2.5 text-[13px] text-zinc-600">
-              <b className="text-zinc-800">{userById(db, l.by)?.name}</b> đổi vai trò <b className="text-zinc-800">{userById(db, l.targetId)?.name}</b>: {ROLE_LABELS[l.from]} → <b>{ROLE_LABELS[l.to]}</b>
+              <b className="text-zinc-800">{userById(db, l.by)?.name}</b> đổi vai trò <b className="text-zinc-800">{userById(db, l.targetId)?.name}</b>: {rlabel(db, l.from)} → <b>{rlabel(db, l.to)}</b>
               <span className="text-zinc-400"> · lý do: {l.reason} · {fmtDT(l.at)}</span>
             </div>
           ))}
@@ -2898,7 +2917,7 @@ function AdminPage() {
       )}
       {roleModal && (
         <Modal title="Đổi vai trò — bắt buộc ghi lý do" onClose={() => setRoleModal(null)}>
-          <p className="mb-2 text-[13px] text-zinc-600">Đổi <b>{userById(db, roleModal.userId)?.name}</b> thành <b>{ROLE_LABELS[roleModal.role]}</b>. Thay đổi được ghi vào nhật ký phân quyền (không xóa được).</p>
+          <p className="mb-2 text-[13px] text-zinc-600">Đổi <b>{userById(db, roleModal.userId)?.name}</b> thành <b>{rlabel(db, roleModal.role)}</b>. Thay đổi được ghi vào nhật ký phân quyền (không xóa được).</p>
           <Field label="Lý do" req><textarea className={inputCls} rows={2} value={roleModal.reason} onChange={(e) => setRoleModal({ ...roleModal, reason: e.target.value })} /></Field>
           <div className="flex justify-end gap-2"><button className={btnSec} onClick={() => setRoleModal(null)}>Hủy</button>
             <button className={btnPri} disabled={!roleModal.reason.trim()} onClick={() => { const r = act.adminUpdateUser(roleModal.userId, { role: roleModal.role }, roleModal.reason.trim()); toast(r.ok ? "Đã đổi vai trò" : r.msg, r.ok ? "ok" : "err"); setRoleModal(null); }}>Xác nhận</button></div>
@@ -2934,7 +2953,7 @@ function AdminPage() {
         ];
         const userCols = [
           { label: "Tên", get: (u) => u.name }, { label: "Email", get: (u) => u.email || "" },
-          { label: "Vai trò", get: (u) => ROLE_LABELS[u.role] || u.role },
+          { label: "Vai trò", get: (u) => rlabel(db, u.role) },
           { label: "Phòng ban", get: (u) => deptById(db, u.deptId)?.name || "" },
           { label: "Chức danh", get: (u) => u.title || "" },
           { label: "Trạng thái", get: (u) => (u.isActive === false ? "Vô hiệu hoá" : "Hoạt động") },
@@ -2968,12 +2987,16 @@ function AdminPage() {
         );
       })()}
       {tab === "config" && (
-        <div className="max-w-lg rounded-xl border border-zinc-100 bg-white p-4 text-[13px] text-zinc-600 space-y-2">
-          <p><b className="text-zinc-800">Trạng thái công việc:</b> cố định 7 trạng thái theo quy trình Novix — không cho tự tạo thêm ở phiên bản đầu.</p>
-          <p><b className="text-zinc-800">Loại công việc:</b> {Object.values(TASK_TYPES).join(", ")}.</p>
-          <p><b className="text-zinc-800">Phân quyền dữ liệu:</b> Employee thấy task liên quan + task công khai trong phòng; Leader thấy toàn bộ phòng mình; Admin đa phòng ban; CEO toàn hệ thống. Bản production sẽ enforce bằng Supabase Row Level Security.</p>
+        <div className="max-w-lg space-y-3">
+          <RoleLabelEditor />
+          <div className="rounded-xl border border-zinc-100 bg-white p-4 text-[13px] text-zinc-600 space-y-2">
+            <p><b className="text-zinc-800">Trạng thái công việc:</b> cố định 7 trạng thái theo quy trình Novix — không cho tự tạo thêm ở phiên bản đầu.</p>
+            <p><b className="text-zinc-800">Loại công việc:</b> {Object.values(TASK_TYPES).join(", ")}.</p>
+            <p><b className="text-zinc-800">Phân quyền dữ liệu:</b> Employee thấy task liên quan + task công khai trong phòng; Leader thấy toàn bộ phòng mình; Admin đa phòng ban; CEO toàn hệ thống — enforce bằng Supabase Row Level Security.</p>
+          </div>
         </div>
       )}
+      {deptModal && <DeptModal state={deptModal} onClose={() => setDeptModal(null)} />}
       {addMember && <AddMemberModal onClose={() => setAddMember(false)} />}
       {userAction && (() => { const M = ACTION_META[userAction.action]; return (
         <Modal title={M.title} onClose={() => !actBusy && setUserAction(null)}>
@@ -2996,6 +3019,68 @@ function AdminPage() {
 }
 
 /* Mật khẩu tạm gợi ý — admin có thể sửa; đủ mạnh để chia sẻ 1 lần rồi nhân sự tự đổi. */
+function DeptModal({ state, onClose }) {
+  const { db, act, toast } = useApp();
+  const [f, setF] = useState({ name: state.name || "", brandId: state.brandId || "", parentDeptId: state.parentDeptId || "" });
+  const [busy, setBusy] = useState(false);
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const editing = !!state.id;
+  const parentChoices = db.depts.filter((d) => d.id !== state.id && d.active !== false);
+  const submit = async () => {
+    if (!f.name.trim() || busy) return;
+    setBusy(true);
+    const patch = { name: f.name.trim(), brandId: f.brandId || null, parentDeptId: f.parentDeptId || null };
+    const r = editing ? act.adminUpdateDept(state.id, patch) : await act.adminCreateDept(patch);
+    setBusy(false);
+    if (!r.ok) { toast(r.msg, "err"); return; }
+    toast(editing ? "Đã cập nhật phòng ban" : `Đã thêm phòng ban ${f.name.trim()}`);
+    onClose();
+  };
+  return (
+    <Modal title={editing ? "Sửa phòng ban" : "Thêm phòng ban"} onClose={onClose}>
+      <Field label="Tên phòng ban" req><input autoFocus className={inputCls} value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="VD: Chăm sóc khách hàng" /></Field>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3">
+        <Field label="Brand"><select className={inputCls} value={f.brandId} onChange={(e) => set("brandId", e.target.value)}><option value="">Chung (cả 2 brand)</option>{BRAND_ORDER.map((b) => <option key={b} value={b}>{BRANDS[b].label}</option>)}</select></Field>
+        <Field label="Thuộc phòng cha (sub-team)"><select className={inputCls} value={f.parentDeptId} onChange={(e) => set("parentDeptId", e.target.value)}><option value="">— Không —</option>{parentChoices.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
+      </div>
+      <div className="mt-3 flex justify-end gap-2 border-t border-zinc-100 pt-3">
+        <button className={btnSec} onClick={onClose}>Hủy</button>
+        <button className={btnPri} disabled={!f.name.trim() || busy} onClick={submit}>{busy ? "Đang lưu…" : (editing ? "Lưu" : "Thêm")}</button>
+      </div>
+    </Modal>
+  );
+}
+
+function RoleLabelEditor() {
+  const { db, act, toast } = useApp();
+  const [f, setF] = useState(() => { const o = {}; ROLE_KEYS.forEach((k) => { o[k] = rlabel(db, k); }); return o; });
+  const [busy, setBusy] = useState(false);
+  const dirty = ROLE_KEYS.some((k) => f[k] !== rlabel(db, k));
+  const save = async () => {
+    setBusy(true);
+    const r = await act.adminSetRoleLabels(f);
+    setBusy(false);
+    toast(r.ok ? "Đã đổi nhãn vai trò" : r.msg, r.ok ? "ok" : "err");
+  };
+  return (
+    <div className="rounded-xl border border-zinc-100 bg-white p-4">
+      <p className="mb-1 text-[13px] font-semibold text-zinc-800">Nhãn hiển thị vai trò</p>
+      <p className="mb-3 text-xs text-zinc-500">Đổi tên gọi cho hợp công ty (VD "Leader" → "Trưởng nhóm"). Chỉ đổi tên hiển thị — quyền hạn của 4 cấp giữ nguyên.</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {ROLE_KEYS.map((k) => (
+          <label key={k} className="text-xs text-zinc-500">Cấp «{ROLE_LABELS[k]}»
+            <input className={`${inputCls} mt-1`} value={f[k]} onChange={(e) => setF((x) => ({ ...x, [k]: e.target.value }))} placeholder={ROLE_LABELS[k]} />
+          </label>
+        ))}
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button className={btnSec} disabled={!dirty || busy} onClick={() => { const o = {}; ROLE_KEYS.forEach((k) => { o[k] = ROLE_LABELS[k]; }); setF(o); }}>Về mặc định</button>
+        <button className={btnPri} disabled={!dirty || busy} onClick={save}>{busy ? "Đang lưu…" : "Lưu nhãn"}</button>
+      </div>
+    </div>
+  );
+}
+
 function genPassword() {
   const cs = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
   let s = "";
@@ -3005,7 +3090,7 @@ function genPassword() {
 
 function AddMemberModal({ onClose }) {
   const { db, me, act, toast } = useApp();
-  const [f, setF] = useState({ email: "", password: genPassword(), name: "", deptId: db.depts[0]?.id || "", role: "employee", title: "" });
+  const [f, setF] = useState({ email: "", password: genPassword(), name: "", deptId: activeDepts(db)[0]?.id || "", role: "employee", title: "" });
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.trim());
@@ -3019,7 +3104,7 @@ function AddMemberModal({ onClose }) {
     toast(`Đã tạo tài khoản ${f.name.trim()} — chia sẻ email + mật khẩu cho nhân sự`);
     onClose();
   };
-  const roleOpts = Object.entries(ROLE_LABELS).filter(([k]) => k !== "ceo" || me.role === "ceo");
+  const roleOpts = ROLE_KEYS.filter((k) => k !== "ceo" || me.role === "ceo");
   return (
     <Modal title="Thêm thành viên" onClose={onClose} wide>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3">
@@ -3033,8 +3118,8 @@ function AddMemberModal({ onClose }) {
           <p className="mt-1 text-[10px] text-zinc-400">Admin chia sẻ mật khẩu này cho nhân sự; họ tự đổi sau khi đăng nhập.</p>
         </Field>
         <Field label="Chức danh"><input className={inputCls} value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="VD: Nhân viên Content" /></Field>
-        <Field label="Phòng ban" req><select className={inputCls} value={f.deptId} onChange={(e) => set("deptId", e.target.value)}>{db.depts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
-        <Field label="Vai trò"><select className={inputCls} value={f.role} onChange={(e) => set("role", e.target.value)}>{roleOpts.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+        <Field label="Phòng ban" req><select className={inputCls} value={f.deptId} onChange={(e) => set("deptId", e.target.value)}>{activeDepts(db).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
+        <Field label="Vai trò"><select className={inputCls} value={f.role} onChange={(e) => set("role", e.target.value)}>{roleOpts.map((k) => <option key={k} value={k}>{rlabel(db, k)}</option>)}</select></Field>
       </div>
       {f.email && !emailOk && <p className="mb-2 text-xs text-amber-600">Email chưa đúng định dạng.</p>}
       <div className="mt-3 flex justify-end gap-2 border-t border-zinc-100 pt-3">
@@ -3205,7 +3290,7 @@ function LoginScreen({ onLogin }) {
                 <button key={id} onClick={() => onLogin(id)} className="flex w-full items-center gap-3 rounded-xl border border-zinc-100 px-3 py-2.5 text-left hover:border-zinc-300 hover:bg-zinc-50 transition-colors">
                   <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${avColor(id)}`}>{u.name.split(" ").map((w) => w[0]).slice(-2).join("")}</span>
                   <span className="flex-1 min-w-0">
-                    <span className="flex items-center gap-2"><span className="text-[13px] font-semibold text-zinc-800">{u.name}</span><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500">{ROLE_LABELS[u.role]}</span></span>
+                    <span className="flex items-center gap-2"><span className="text-[13px] font-semibold text-zinc-800">{u.name}</span><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500">{rlabel(null, u.role)}</span></span>
                     <span className="block truncate text-[11px] text-zinc-400">{hint}</span>
                   </span>
                   <ChevronRight className="h-4 w-4 text-zinc-300" />
@@ -3337,7 +3422,7 @@ function Topbar({ onCreate, onLogout, onMobileNav }) {
         </button>
         {showMenu && (
           <div className="absolute right-0 top-11 z-50 w-56 rounded-2xl border border-zinc-100 bg-white p-1.5 shadow-xl">
-            <div className="px-2.5 py-2"><p className="text-[13px] font-semibold text-zinc-800">{me.name}</p><p className="text-[11px] text-zinc-400">{me.title} · {ROLE_LABELS[me.role]}</p></div>
+            <div className="px-2.5 py-2"><p className="text-[13px] font-semibold text-zinc-800">{me.name}</p><p className="text-[11px] text-zinc-400">{me.title} · {rlabel(db, me.role)}</p></div>
             <button className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-zinc-600 hover:bg-zinc-50" onClick={onLogout}><LogOut className="h-4 w-4" />Đổi tài khoản demo</button>
           </div>
         )}
@@ -3941,7 +4026,37 @@ export default function App() {
     recurringToggle: (id, paused) => setDb((prev) => ({ ...prev, recurrings: prev.recurrings.map((r) => r.id === id ? { ...r, paused } : r) })),
     recurringEnd: (id) => setDb((prev) => ({ ...prev, recurrings: prev.recurrings.map((r) => r.id === id ? { ...r, endDate: todayISO() } : r) })),
     runSchedulerNow: (dateISO) => setDb((prev) => runAlerts(runScheduler(prev, dateISO || todayISO()))),
-    adminUpdateDept: (id, patch) => setDb((prev) => ({ ...prev, depts: prev.depts.map((d) => d.id === id ? { ...d, ...patch } : d) })),
+    adminUpdateDept: (id, patch) => {
+      if (!["admin", "ceo"].includes(me.role)) return { ok: false, msg: "Chỉ Admin/CEO" };
+      const cur = db.depts.find((d) => d.id === id);
+      if (!cur) return { ok: false, msg: "Không tìm thấy phòng ban" };
+      const next = { ...cur, ...patch };
+      setDb((prev) => ({ ...prev, depts: prev.depts.map((d) => d.id === id ? next : d) }));
+      if (SUPABASE_ENABLED) saveDepartment(next).then((r) => { if (!r.ok) toast(`Lưu thất bại: ${r.msg}`, "err"); });
+      return { ok: true };
+    },
+    /* Thêm phòng ban mới (chỉ Admin/CEO). */
+    adminCreateDept: async ({ name, brandId, parentDeptId }) => {
+      if (!["admin", "ceo"].includes(me.role)) return { ok: false, msg: "Chỉ Admin/CEO được thêm phòng ban" };
+      if (!name || !name.trim()) return { ok: false, msg: "Thiếu tên phòng ban" };
+      const base = name.trim().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[đĐ]/g, "d").toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 10) || "dept";
+      let id = base, n = 1;
+      while (db.depts.some((d) => d.id === id)) id = `${base}${++n}`;
+      const dept = { id, name: name.trim(), brandId: brandId || null, parentDeptId: parentDeptId || null, leaderId: null, defaultReceiverId: null, active: true };
+      if (SUPABASE_ENABLED) { const r = await saveDepartment(dept); if (!r.ok) return r; }
+      setDb((prev) => ({ ...prev, depts: [...prev.depts, dept] }));
+      return { ok: true };
+    },
+    /* Ẩn / hiện lại phòng ban (không xoá cứng để giữ dữ liệu cũ). */
+    adminSetDeptActive: (id, active) => act.adminUpdateDept(id, { active }),
+    /* Đổi nhãn hiển thị 4 vai trò (giữ nguyên logic quyền). */
+    adminSetRoleLabels: async (labels) => {
+      if (!["admin", "ceo"].includes(me.role)) return { ok: false, msg: "Chỉ Admin/CEO" };
+      const clean = {}; ROLE_KEYS.forEach((k) => { if (labels[k] && labels[k].trim()) clean[k] = labels[k].trim(); });
+      if (SUPABASE_ENABLED) { const r = await saveRoleLabels(clean); if (!r.ok) return r; }
+      setDb((prev) => ({ ...prev, roleLabels: clean }));
+      return { ok: true };
+    },
     /* Tạo tài khoản nhân sự (chỉ Admin/CEO). Chạy qua Edge Function giữ service_role ở server. */
     adminCreateUser: async ({ email, password, name, deptId, role, title }) => {
       if (!["admin", "ceo"].includes(me.role)) return { ok: false, msg: "Chỉ Admin/CEO được tạo tài khoản" };
@@ -4284,7 +4399,7 @@ function HrProcessForm({ onClose }) {
     <Modal title="Tạo quy trình nhân sự" onClose={onClose} wide>
       <div className="grid grid-cols-2 gap-x-3">
         <Field label="Loại quy trình" req><select className={inputCls} value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>{Object.entries(HR_TEMPLATES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></Field>
-        <Field label="Phòng ban" req><select className={inputCls} value={f.deptId} onChange={(e) => setF({ ...f, deptId: e.target.value })}>{db.depts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
+        <Field label="Phòng ban" req><select className={inputCls} value={f.deptId} onChange={(e) => setF({ ...f, deptId: e.target.value })}>{activeDepts(db).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
         <Field label="Tên nhân sự" req><input className={inputCls} value={f.personName} onChange={(e) => setF({ ...f, personName: e.target.value })} placeholder="VD: Nguyễn Văn A" /></Field>
         <Field label="Tài khoản (nếu đã có)"><UserSelect value={f.userId || null} onChange={(v) => setF({ ...f, userId: v || "" })} placeholder="— Chưa có tài khoản —" /></Field>
         <Field label="Ngày bắt đầu" req><input type="date" className={inputCls} value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} /></Field>

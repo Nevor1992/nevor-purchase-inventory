@@ -18,6 +18,7 @@ export const userFromRow = (r) => ({
 export const deptFromRow = (r) => ({
   id: r.id, name: r.name, leaderId: r.leader_id, brandId: r.brand_id,
   parentDeptId: r.parent_dept_id || null, defaultReceiverId: r.default_receiver_id || null,
+  active: r.active !== false,
 });
 
 export const projectFromRow = (r) => ({

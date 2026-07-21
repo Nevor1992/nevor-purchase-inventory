@@ -21,7 +21,7 @@ const groupBy = (rows, key) => rows.reduce((m, r) => ((m[r[key]] = m[r[key]] || 
 
 /* ---------------- initial load: DB → UI state shape ---------------- */
 export async function loadDb() {
-  const [users, depts, projects, tasks, collabs, checklist, dlHist, attach, requests, proposals, comments, notifs, docs, hrProcs, filters] = await Promise.all([
+  const [users, depts, projects, tasks, collabs, checklist, dlHist, attach, requests, proposals, comments, notifs, docs, hrProcs, filters, settings] = await Promise.all([
     all(supabase.from("users").select("*")),
     all(supabase.from("departments").select("*")),
     all(supabase.from("projects").select("*")),
@@ -37,7 +37,12 @@ export async function loadDb() {
     all(supabase.from("documents").select("*")),
     all(supabase.from("hr_processes").select("*")),
     all(supabase.from("saved_filters").select("*")),
+    /* Chịu lỗi: nếu chưa áp migration 000009 (bảng app_settings chưa có),
+       trả rỗng thay vì làm vỡ toàn bộ loadDb → app vẫn chạy, chỉ chưa có
+       nhãn vai trò tùy chỉnh. */
+    supabase.from("app_settings").select("*").then((r) => (r.error ? [] : (r.data || []))),
   ]);
+  const roleLabels = (settings.find((s) => s.key === "role_labels") || {}).value || null;
 
   const collabsBy = groupBy(collabs, "task_id");
   const checklistBy = groupBy(checklist, "task_id");
@@ -64,8 +69,27 @@ export async function loadDb() {
     docs: docs.map(docFromRow),
     hrProcesses: hrProcs.map(hrProcessFromRow),
     savedFilters: filters.map(savedFilterFromRow),
+    roleLabels,
     recurrings: [], roleLogs: [], sentAlerts: {},
   };
+}
+
+/* ---------------- admin: phòng ban & nhãn vai trò (ghi trực tiếp qua RLS) ----
+   Manager/CEO ghi được nhờ policy "departments/app_settings: managers write"
+   — không cần service_role. Demo mode chỉ đổi state in-memory (không gọi đây). */
+export async function saveDepartment(dept) {
+  const { error } = await supabase.from("departments").upsert({
+    id: dept.id, name: dept.name, brand_id: dept.brandId || null,
+    parent_dept_id: dept.parentDeptId || null, leader_id: dept.leaderId || null,
+    active: dept.active !== false,
+  });
+  return error ? { ok: false, msg: error.message } : { ok: true };
+}
+
+export async function saveRoleLabels(labels) {
+  const { error } = await supabase.from("app_settings")
+    .upsert({ key: "role_labels", value: labels });
+  return error ? { ok: false, msg: error.message } : { ok: true };
 }
 
 /* ---------------- sync engine: diff prev/next state, persist changes -------
