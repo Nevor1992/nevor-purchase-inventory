@@ -23,17 +23,21 @@ export const deptFromRow = (r) => ({
 
 export const projectFromRow = (r) => ({
   id: r.id, code: r.code, name: r.name, goal: r.goal || "", ownerId: r.owner_id,
+  managerId: r.manager_id || null,
   deptIds: r.dept_ids || [], watcherIds: r.watcher_ids || [], brandId: r.brand_id,
-  start: r.start_date, deadline: r.deadline, status: r.status, priority: r.priority || "normal",
-  desc: r.description || "", planLink: r.plan_link || "", issues: r.issues || [], deleted: r.deleted === true,
+  start: r.start_date, deadline: r.deadline, forecastDeadline: r.forecast_deadline || null,
+  status: r.status, priority: r.priority || "normal",
+  desc: r.description || "", planLink: r.plan_link || "", issues: r.issues || [],
+  milestones: r.milestones || [], decisions: r.decisions || [], deleted: r.deleted === true,
 });
 
 export const projectToRow = (p) => ({
   id: p.id, code: p.code, name: p.name, goal: p.goal, owner_id: p.ownerId,
+  manager_id: p.managerId || null,
   dept_ids: p.deptIds || [], watcher_ids: p.watcherIds || [], brand_id: p.brandId || null,
-  start_date: p.start || null, deadline: p.deadline || null, status: p.status,
-  priority: p.priority || "normal", description: p.desc || "", plan_link: p.planLink || "",
-  issues: p.issues || [], deleted: !!p.deleted,
+  start_date: p.start || null, deadline: p.deadline || null, forecast_deadline: p.forecastDeadline || null,
+  status: p.status, priority: p.priority || "normal", description: p.desc || "", plan_link: p.planLink || "",
+  issues: p.issues || [], milestones: p.milestones || [], decisions: p.decisions || [], deleted: !!p.deleted,
 });
 
 /* ---------------- tasks (+ sub-tables assembled in) ---------------- */

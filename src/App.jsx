@@ -101,8 +101,27 @@ const rlabel = (db, role) => (db && db.roleLabels && db.roleLabels[role]) || ROL
 const BRANDS = {
   nevor: { label: "Nevor", chip: "bg-indigo-50 text-indigo-700 border-indigo-100" },
   uhero: { label: "UHero", chip: "bg-orange-50 text-orange-700 border-orange-100" },
+  shared: { label: "Dùng chung", chip: "bg-zinc-100 text-zinc-500 border-zinc-200" },
 };
 const BRAND_ORDER = ["nevor", "uhero"];
+/* Project brand: null (dữ liệu cũ) = dùng chung. PROJECT_BRAND_ORDER cho form + bộ lọc CEO. */
+const projBrand = (p) => p?.brandId || "shared";
+const PROJECT_BRAND_ORDER = ["nevor", "uhero", "shared"];
+const MILESTONE_STATUSES = {
+  NOT_STARTED:      { label: "Chưa bắt đầu", pill: "bg-zinc-100 text-zinc-500" },
+  IN_PROGRESS:      { label: "Đang làm",     pill: "bg-blue-50 text-blue-700" },
+  AT_RISK:          { label: "Có rủi ro",    pill: "bg-amber-50 text-amber-700" },
+  WAITING_APPROVAL: { label: "Chờ duyệt",    pill: "bg-violet-50 text-violet-700" },
+  COMPLETED:        { label: "Hoàn thành",   pill: "bg-emerald-50 text-emerald-700" },
+  PAUSED:           { label: "Tạm dừng",     pill: "bg-zinc-100 text-zinc-500" },
+  CANCELLED:        { label: "Hủy",          pill: "bg-red-50 text-red-500" },
+};
+const MILESTONE_ORDER = ["NOT_STARTED", "IN_PROGRESS", "AT_RISK", "WAITING_APPROVAL", "COMPLETED", "PAUSED", "CANCELLED"];
+const HEALTH = {
+  ON_TRACK:  { label: "Đúng tiến độ", pill: "bg-emerald-50 text-emerald-700 border-emerald-100", dot: "bg-emerald-500" },
+  AT_RISK:   { label: "Có rủi ro",    pill: "bg-amber-50 text-amber-700 border-amber-100",       dot: "bg-amber-500" },
+  OFF_TRACK: { label: "Trễ tiến độ",  pill: "bg-red-50 text-red-600 border-red-100",             dot: "bg-red-500" },
+};
 const VISIBILITIES = { private: "Riêng tư", department: "Phòng ban", project: "Dự án", company: "Toàn công ty" };
 const TASK_CATEGORIES = ["GENERAL", "CONTENT", "MEDIA", "ECOMMERCE", "KOC_BOOKING", "AFFILIATE", "PRODUCT", "PURCHASING", "WAREHOUSE", "CUSTOMER_EXPERIENCE", "FINANCE_SUPPORT", "HR_ONBOARDING", "HR_PROBATION", "HR_TRAINING", "HR_DOCUMENT", "HR_POLICY", "HR_OFFBOARDING", "HR_INTERNAL_SUPPORT"];
 const HR_CATEGORY_LABELS = { HR_ONBOARDING: "Onboarding", HR_PROBATION: "Thử việc", HR_TRAINING: "Đào tạo", HR_DOCUMENT: "Hồ sơ", HR_POLICY: "Chính sách", HR_OFFBOARDING: "Offboarding", HR_INTERNAL_SUPPORT: "Yêu cầu nội bộ" };
@@ -396,7 +415,33 @@ function buildSeed() {
       createdAt: Date.now() - 4 * DAY, resolvedAt: i.resolved ? Date.now() - DAY : null,
       resolutionNote: i.resolved ? "Đã xử lý (chuyển đổi từ dữ liệu cũ)" : "",
     }));
+    p.milestones = p.milestones || [];
+    p.decisions = p.decisions || [];
+    p.forecastDeadline = p.forecastDeadline || null;
   });
+  /* Seed milestone + decision cho 2 dự án launch để demo có dữ liệu thật */
+  const MS = (over) => ({ id: uid("ms"), name: "", desc: "", ownerId: null, approverId: null, plannedStart: null, plannedDeadline: null, actualCompletedAt: null, status: "NOT_STARTED", weight: 1, expectedOutput: "", acceptanceCriteria: "", relatedTaskIds: [], createdAt: Date.now() - 10 * DAY, updatedAt: Date.now() - 2 * DAY, ...over });
+  const prj1 = SEED_PROJECTS.find((p) => p.id === "prj1");
+  if (prj1) {
+    prj1.milestones = [
+      MS({ name: "M1. Chốt thông tin & giá sản phẩm", ownerId: "lan", approverId: "minh", plannedDeadline: D(-6), status: "COMPLETED", actualCompletedAt: Date.now() - 6 * DAY, weight: 1, expectedOutput: "File thông tin sản phẩm + giá final" }),
+      MS({ name: "M2. Content & Media sẵn sàng", ownerId: "dat", approverId: "minh", plannedDeadline: D(-1), status: "AT_RISK", weight: 2, expectedOutput: "10 brand video + trang sản phẩm", acceptanceCriteria: "Đủ 10 video có sub, trang SP duyệt" }),
+      MS({ name: "M3. KOC seeding", ownerId: "thao", approverId: "trang", plannedDeadline: D(8), status: "IN_PROGRESS", weight: 2, expectedOutput: "10 nano KOC đã book + lịch post" }),
+      MS({ name: "M4. Launch", ownerId: "minh", approverId: "ceo", plannedDeadline: D(18), status: "NOT_STARTED", weight: 4, expectedOutput: "Shop live, đạt 1.000 đơn/30 ngày" }),
+    ];
+    prj1.decisions = [
+      { id: uid("dec"), title: "Chốt nhà cung cấp đai lưng", decision: "Chọn NCC A (chất liệu đạt, giá tốt hơn 8%).", decidedById: "minh", decidedAt: Date.now() - 12 * DAY, reason: "Sample A đạt độ đàn hồi & giá cạnh tranh", impact: "Khóa được giá vốn cho launch", supersedesId: null, relatedTaskIds: [] },
+    ];
+  }
+  const prj7 = SEED_PROJECTS.find((p) => p.id === "prj7");
+  if (prj7) {
+    prj7.milestones = [
+      MS({ name: "M1. Chốt mẫu & MOQ", ownerId: "trung", approverId: "ceo", plannedDeadline: D(-2), status: "AT_RISK", weight: 2, expectedOutput: "Chốt MOQ với Thu mua", acceptanceCriteria: "MOQ ≤ 300/màu" }),
+      MS({ name: "M2. Content Seeding", ownerId: "trung", approverId: "ceo", plannedDeadline: D(12), status: "NOT_STARTED", weight: 2, expectedOutput: "Bộ content + KOC UHero" }),
+      MS({ name: "M3. Launch UHero V2", ownerId: "trung", approverId: "ceo", plannedDeadline: D(35), status: "NOT_STARTED", weight: 4, expectedOutput: "500 đơn/30 ngày" }),
+    ];
+    prj7.decisions = [];
+  }
   /* Recurring: chuyển task recurrence → template + instance hôm nay; scheduler sẽ sinh kỳ mới */
   const recurrings = [];
   tasks.forEach((t) => {
@@ -706,6 +751,70 @@ function deadlineMeta(t) {
   if (dl === 0) return { label: "Hôm nay", cls: "text-amber-600 font-medium" };
   if (dl <= 3) return { label: `Còn ${dl} ngày`, cls: "text-amber-600" };
   return { label: fmtD(t.deadline), cls: "text-zinc-500" };
+}
+
+/* ---------- Project Management: milestone / health (pure, testable) ---------- */
+/* Trọng số tiến độ dự án S=1/M=2/L=4 (khác EFFORT_W workload ở trên dùng L=3) */
+const PROJ_EFFORT_W = { S: 1, M: 2, L: 4 };
+const effW = (t) => PROJ_EFFORT_W[t?.effort] ?? 1;
+/* Milestone quá hạn / sắp hạn — chỉ tính khi chưa hoàn thành/hủy */
+const msOpen = (m) => !["COMPLETED", "CANCELLED"].includes(m.status);
+const msOverdue = (m) => m.plannedDeadline && msOpen(m) && daysLeft(m.plannedDeadline) < 0;
+const msDueSoon = (m) => m.plannedDeadline && msOpen(m) && daysLeft(m.plannedDeadline) >= 0 && daysLeft(m.plannedDeadline) <= 3;
+
+/* Tiến độ milestone theo trọng số weight (mặc định 1) */
+function milestoneProgress(p) {
+  const ms = (p.milestones || []).filter((m) => m.status !== "CANCELLED");
+  const totalW = ms.reduce((s, m) => s + (m.weight || 1), 0);
+  const doneList = ms.filter((m) => m.status === "COMPLETED");
+  const doneW = doneList.reduce((s, m) => s + (m.weight || 1), 0);
+  return { total: ms.length, done: doneList.length, pct: totalW ? Math.round((doneW / totalW) * 100) : 0 };
+}
+
+/* Tiến độ công việc theo trọng số S=1/M=2/L=4 (không đếm task đã xóa) */
+function weightedTaskProgress(tasks) {
+  const act = (tasks || []).filter((t) => !t.deleted);
+  const totalW = act.reduce((s, t) => s + effW(t), 0);
+  const doneList = act.filter((t) => t.status === "done");
+  const doneW = doneList.reduce((s, t) => s + effW(t), 0);
+  return { total: act.length, done: doneList.length, pct: totalW ? Math.round((doneW / totalW) * 100) : 0 };
+}
+
+/* Sức khỏe dự án — TỰ ĐỘNG tính, luôn kèm lý do cụ thể (§20). Không cho người dùng tự chọn.
+   Trả về { level: ON_TRACK|AT_RISK|OFF_TRACK, reasons: string[] }. */
+function computeProjectHealth(db, p) {
+  if (!p || p.deleted) return { level: "ON_TRACK", reasons: [] };
+  const tasks = (db.tasks || []).filter((t) => !t.deleted && t.projectId === p.id);
+  const reqs = (db.requests || []).filter((r) => !r.deleted && r.projectId === p.id);
+  const blockers = (p.issues || []).filter((i) => i.status !== "RESOLVED");
+  const ms = p.milestones || [];
+  const off = [], risk = [];
+  const closedPrj = p.status === "done" || p.status === "cancelled";
+
+  /* --- OFF_TRACK --- */
+  const critBlk = blockers.filter((b) => b.severity === "critical");
+  if (critBlk.length) off.push(`${critBlk.length} blocker CRITICAL chưa xử lý`);
+  const overdueMs = ms.filter(msOverdue);
+  if (overdueMs.length) off.push(`${overdueMs.length} milestone đã quá hạn`);
+  if (!closedPrj && p.deadline && daysLeft(p.deadline) < 0) off.push(`Dự án đã quá deadline tổng (${fmtDFull(p.deadline)})`);
+  const noOwnerCrit = tasks.filter((t) => !t.ownerId && ["high", "urgent"].includes(t.priority) && t.status !== "done");
+  if (noOwnerCrit.length >= 2) off.push(`${noOwnerCrit.length} việc quan trọng chưa có người phụ trách`);
+
+  /* --- AT_RISK --- */
+  const highBlk = blockers.filter((b) => b.severity === "high");
+  if (highBlk.length) risk.push(`${highBlk.length} blocker mức cao`);
+  const soonMs = ms.filter(msDueSoon);
+  if (soonMs.length) risk.push(`${soonMs.length} milestone sắp tới hạn`);
+  const critOver = tasks.filter((t) => ["high", "urgent"].includes(t.priority) && isOverdue(t));
+  if (critOver.length) risk.push(`${critOver.length} việc ưu tiên cao đang quá hạn`);
+  const stuckReq = reqs.filter((r) => ["pending", "info", "deadline_proposed"].includes(r.status));
+  if (stuckReq.length) risk.push(`${stuckReq.length} yêu cầu liên phòng ban đang tắc`);
+  if (p.forecastDeadline && p.deadline && p.forecastDeadline > p.deadline) risk.push(`Dự báo hoàn thành trễ hơn kế hoạch`);
+
+  if (closedPrj) return { level: "ON_TRACK", reasons: [] };
+  if (off.length) return { level: "OFF_TRACK", reasons: [...off, ...risk] };
+  if (risk.length) return { level: "AT_RISK", reasons: risk };
+  return { level: "ON_TRACK", reasons: [] };
 }
 
 /* ---------- pure db mutators ---------- */
@@ -2017,29 +2126,32 @@ function CeoPanel({ visible: allVisible }) {
   const { db, nav, openTask, openRequest } = useApp();
   const [bTab, setBTab] = useState("all");
   const [inclCommon, setInclCommon] = useState(false);
-  /* Brand tách bạch: xem Nevor = CHỈ task Nevor; việc Chung là tuỳ chọn bật thêm — không cộng trùng 2 brand */
-  const visible = bTab === "all" ? allVisible : allVisible.filter((t) => t.brandId === bTab || (inclCommon && !t.brandId));
+  /* Brand tách bạch: null/"shared" = việc Dùng chung. Xem Nevor = CHỈ Nevor; Dùng chung là tuỳ chọn bật thêm. */
+  const brandMatch = (bid) => bTab === "all" || (bid || "shared") === bTab || (inclCommon && bTab !== "shared" && (bid || "shared") === "shared");
+  const visible = allVisible.filter((t) => brandMatch(t.brandId));
   const urgent = visible.filter((t) => t.priority === "urgent" && t.status !== "done");
   const overHigh = visible.filter((t) => isOverdue(t) && ["high", "urgent"].includes(t.priority));
   const ceoReview = visible.filter((t) => t.approverId === "ceo" && t.status === "review");
-  const crossStuck = db.requests.filter((r) => (["pending", "info"].includes(r.status) && daysLeft(r.proposedDeadline) <= 2) || r.status === "deadline_proposed").filter((r) => bTab === "all" || r.brandId === bTab || (inclCommon && !r.brandId));
-  const keyPrj = db.projects.filter((p) => ["active", "prep", "paused"].includes(p.status) && (bTab === "all" || p.brandId === bTab || (inclCommon && !p.brandId)));
+  const crossStuck = db.requests.filter((r) => !r.deleted && ((["pending", "info"].includes(r.status) && daysLeft(r.proposedDeadline) <= 2) || r.status === "deadline_proposed")).filter((r) => brandMatch(r.brandId));
+  const keyPrj = db.projects.filter((p) => !p.deleted && ["active", "prep", "paused"].includes(p.status) && brandMatch(p.brandId));
   /* ===== CEO ACTION CENTER: chỉ việc cần CEO — không đưa mọi task nhỏ ===== */
-  const critBlockers = db.projects.flatMap((p) => p.issues.filter((i) => i.status !== "RESOLVED" && i.severity === "critical").map((i) => ({ ...i, projectId: p.id, projectName: p.name })));
-  const noOwnerBlockers = db.projects.flatMap((p) => p.issues.filter((i) => i.status !== "RESOLVED" && !i.ownerId).map((i) => ({ ...i, projectId: p.id, projectName: p.name })));
+  const critBlockers = keyPrj.flatMap((p) => p.issues.filter((i) => i.status !== "RESOLVED" && i.severity === "critical").map((i) => ({ ...i, projectId: p.id, projectName: p.name })));
+  const noOwnerBlockers = keyPrj.flatMap((p) => p.issues.filter((i) => i.status !== "RESOLVED" && !i.ownerId).map((i) => ({ ...i, projectId: p.id, projectName: p.name })));
   const urgentOver = visible.filter((t) => t.priority === "urgent" && isOverdue(t) && daysLeft(t.deadline) <= -2);
-  const slowPrj = keyPrj.filter((p) => { const pts = allVisible.filter((t) => t.projectId === p.id); const done = pts.filter((t) => t.status === "done").length; const pct = pts.length ? done / pts.length : 0; return isOverdue({ deadline: p.deadline, status: "doing" }) || (p.deadline && daysLeft(p.deadline) <= 7 && pct < 0.7); });
+  /* Dự án có nguy cơ — theo Health tự động (kèm lý do), không chỉ đếm % task */
+  const riskPrj = keyPrj.map((p) => ({ p, h: computeProjectHealth(db, p) })).filter((x) => x.h.level !== "ON_TRACK").sort((a, b) => (a.h.level === "OFF_TRACK" ? -1 : 1) - (b.h.level === "OFF_TRACK" ? -1 : 1));
+  const lateMilestones = keyPrj.flatMap((p) => (p.milestones || []).filter(msOverdue).map((m) => ({ ...m, projectId: p.id, projectName: p.name })));
   const escalated = db.notifs.filter((n) => n.userId === "ceo" && !n.read && n.level === "urgent").slice(0, 5);
   const AC = ({ items, label, tone, render }) => items.length === 0 ? null : (
     <div className="mb-2"><p className={`mb-1 text-[11px] font-semibold ${tone}`}>{label} · {items.length}</p><div className="space-y-0.5">{items.slice(0, 5).map(render)}</div></div>
   );
   const TRow = (t) => <button key={t.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-zinc-50" onClick={() => openTask(t.id)}><span className="flex-1 truncate text-[12px] text-zinc-700">{t.isConfidential ? "(Công việc bảo mật)" : t.name}</span><span className="hidden sm:inline text-[10px] text-zinc-400">{userById(db, t.ownerId)?.name}</span>{t.deadline && <span className={`text-[10px] tabular-nums ${deadlineMeta(t).cls}`}>{deadlineMeta(t).label}</span>}<ChevronRight className="h-3 w-3 shrink-0 text-zinc-300" /></button>;
-  const acEmpty = !ceoReview.length && !critBlockers.length && !urgentOver.length && !slowPrj.length && !crossStuck.length && !noOwnerBlockers.length;
+  const acEmpty = !ceoReview.length && !critBlockers.length && !urgentOver.length && !riskPrj.length && !lateMilestones.length && !crossStuck.length && !noOwnerBlockers.length;
   return (
     <div className="mt-1">
       <div className="mb-3 flex items-center gap-3 flex-wrap">
         <div className="flex rounded-lg bg-zinc-100 p-0.5 w-fit">
-          {[["all", "Toàn công ty"], ["nevor", "Nevor"], ["uhero", "UHero"]].map(([k, lb]) => (
+          {[["all", "Toàn công ty"], ["nevor", "Nevor"], ["uhero", "UHero"], ["shared", "Dùng chung"]].map(([k, lb]) => (
             <button key={k} onClick={() => setBTab(k)} className={`rounded-md px-3 py-1.5 text-xs font-medium ${bTab === k ? "bg-white shadow-sm text-zinc-800" : "text-zinc-500"}`}>{lb}</button>
           ))}
         </div>
@@ -2051,7 +2163,8 @@ function CeoPanel({ visible: allVisible }) {
         <AC items={ceoReview} label="Chờ CEO duyệt / quyết định" tone="text-violet-600" render={TRow} />
         <AC items={critBlockers} label="Blocker CRITICAL" tone="text-red-700" render={(i) => <button key={i.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-zinc-50" onClick={() => nav("projectDetail", { id: i.projectId })}><span className="flex-1 truncate text-[12px] text-zinc-700">{i.title}</span><span className="text-[10px] text-zinc-400">{i.projectName} · {userById(db, i.ownerId)?.name || "chưa có owner"}</span><ChevronRight className="h-3 w-3 text-zinc-300" /></button>} />
         <AC items={urgentOver} label="Khẩn cấp quá hạn nhiều ngày" tone="text-red-600" render={TRow} />
-        <AC items={slowPrj} label="Dự án chậm tiến độ" tone="text-amber-600" render={(p) => <button key={p.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-zinc-50" onClick={() => nav("projectDetail", { id: p.id })}><span className="flex-1 truncate text-[12px] text-zinc-700">{p.name}</span><span className="text-[10px] text-zinc-400">hạn {fmtDFull(p.deadline)}</span><ChevronRight className="h-3 w-3 text-zinc-300" /></button>} />
+        <AC items={riskPrj} label="Dự án có nguy cơ" tone="text-amber-600" render={({ p, h }) => <button key={p.id} className="flex w-full items-start gap-2 rounded-md px-1.5 py-1 text-left hover:bg-zinc-50" onClick={() => nav("projectDetail", { id: p.id })}><span className="min-w-0 flex-1"><span className="flex items-center gap-1.5"><span className="truncate text-[12px] text-zinc-700">{p.name}</span><HealthBadge h={h} /></span>{h.reasons[0] && <span className="block truncate text-[10px] text-zinc-400">{h.reasons[0]}</span>}</span><ChevronRight className="mt-0.5 h-3 w-3 shrink-0 text-zinc-300" /></button>} />
+        <AC items={lateMilestones} label="Milestone đã quá hạn" tone="text-red-600" render={(m) => <button key={m.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-zinc-50" onClick={() => nav("projectDetail", { id: m.projectId })}><span className="flex-1 truncate text-[12px] text-zinc-700">{m.name}</span><span className="text-[10px] text-zinc-400">{m.projectName} · hạn {fmtDFull(m.plannedDeadline)}</span><ChevronRight className="h-3 w-3 text-zinc-300" /></button>} />
         <AC items={crossStuck} label="Yêu cầu liên phòng ban bị tắc" tone="text-sky-600" render={(r) => <button key={r.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-zinc-50" onClick={() => openRequest(r.id)}><span className="flex-1 truncate text-[12px] text-zinc-700">{r.title}</span><ReqPill s={r.status} /><ChevronRight className="h-3 w-3 text-zinc-300" /></button>} />
         <AC items={noOwnerBlockers} label="Vấn đề chưa có người xử lý" tone="text-orange-600" render={(i) => <button key={i.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-zinc-50" onClick={() => nav("projectDetail", { id: i.projectId })}><span className="flex-1 truncate text-[12px] text-zinc-700">{i.title}</span><ChevronRight className="h-3 w-3 text-zinc-300" /></button>} />
       </div>
@@ -2177,27 +2290,33 @@ function DeptDetail({ id }) {
 function ProjectsPage() {
   const { db, me, nav, act, toast } = useApp();
   const [creating, setCreating] = useState(false);
+  const [bTab, setBTab] = useState("all");
   const canCreate = ["admin", "ceo", "leader"].includes(me.role);
-  const EFFORT_W = { S: 1, M: 2, L: 4 };
+  const list = db.projects.filter((p) => !p.deleted && (bTab === "all" || projBrand(p) === bTab));
   return (
     <div>
-      <PageHeader title="Dự án" desc="Mục tiêu liên phòng ban — tiến độ theo trọng số công việc." actions={canCreate && <button className={btnPri} onClick={() => setCreating(true)}><Plus className="h-4 w-4" />Tạo dự án</button>} />
+      <PageHeader title="Dự án" desc="Mục tiêu liên phòng ban — tiến độ theo trọng số công việc + sức khỏe tự động." actions={canCreate && <button className={btnPri} onClick={() => setCreating(true)}><Plus className="h-4 w-4" />Tạo dự án</button>} />
+      <div className="mb-3 flex rounded-lg bg-zinc-100 p-0.5 w-fit">
+        {[["all", "Tất cả"], ["nevor", "Nevor"], ["uhero", "UHero"], ["shared", "Dùng chung"]].map(([k, lb]) => (
+          <button key={k} onClick={() => setBTab(k)} className={`rounded-md px-3 py-1.5 text-xs font-medium ${bTab === k ? "bg-white shadow-sm text-zinc-800" : "text-zinc-500"}`}>{lb}</button>
+        ))}
+      </div>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-        {db.projects.filter((p) => !p.deleted).map((p) => {
+        {list.map((p) => {
           const pts = db.tasks.filter((t) => !t.deleted && t.projectId === p.id);
-          const totalW = pts.reduce((s, t) => s + (EFFORT_W[t.effort] ?? 1), 0);
-          const doneW = pts.filter((t) => t.status === "done").reduce((s, t) => s + (EFFORT_W[t.effort] ?? 1), 0);
-          const pct = totalW ? Math.round((doneW / totalW) * 100) : 0;
-          const blockers = (p.issues || []).filter((i) => !i.resolved && i.status !== "RESOLVED").length;
+          const wp = weightedTaskProgress(pts);
+          const blockers = (p.issues || []).filter((i) => i.status !== "RESOLVED").length;
+          const health = computeProjectHealth(db, p);
           const dl = deadlineMeta({ deadline: p.deadline, status: p.status === "done" ? "done" : "doing" });
           return (
             <button key={p.id} onClick={() => nav("projectDetail", { id: p.id })} className="rounded-xl border border-zinc-200 bg-white p-4 text-left transition-all hover:border-zinc-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/15">
               <div className="mb-1.5 flex items-start justify-between gap-2">
-                <p className="text-sm font-semibold text-zinc-800 leading-snug">{p.name} <BrandChip id={p.brandId} /></p>
+                <p className="text-sm font-semibold text-zinc-800 leading-snug">{p.name} <BrandChip id={projBrand(p)} /></p>
                 <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${PROJECT_STATUSES[p.status].pill}`}>{PROJECT_STATUSES[p.status].label}</span>
               </div>
+              <div className="mb-2"><HealthBadge h={health} /></div>
               <p className="mb-2.5 text-xs text-zinc-400 line-clamp-2">{p.goal}</p>
-              <div className="mb-2 flex items-center gap-2"><ProgressBar v={pct} /><span className="text-[11px] tabular-nums text-zinc-500 whitespace-nowrap">{pct}%</span></div>
+              <div className="mb-2 flex items-center gap-2"><ProgressBar v={wp.pct} /><span className="text-[11px] tabular-nums text-zinc-500 whitespace-nowrap">{wp.pct}%</span></div>
               <div className="flex items-center justify-between text-[11px] text-zinc-400">
                 <span className="inline-flex items-center gap-1.5"><Avatar id={p.ownerId} size={6} />{userById(db, p.ownerId)?.name}</span>
                 <span className="flex items-center gap-2">
@@ -2209,25 +2328,27 @@ function ProjectsPage() {
           );
         })}
       </div>
+      {list.length === 0 && <EmptyState icon={FolderKanban} title="Không có dự án" hint="Chưa có dự án nào cho bộ lọc này." />}
       {creating && <ProjectForm onClose={() => setCreating(false)} />}
     </div>
   );
 }
 function ProjectForm({ onClose }) {
   const { db, act, toast } = useApp();
-  const [f, setF] = useState({ name: "", goal: "", ownerId: null, deptIds: [], start: todayISO(), deadline: D(30), priority: "normal", desc: "", planLink: "", brandId: null });
+  const [f, setF] = useState({ name: "", goal: "", ownerId: null, managerId: null, deptIds: [], start: todayISO(), deadline: D(30), priority: "normal", desc: "", planLink: "", brandId: "shared" });
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   return (
     <Modal title="Tạo dự án" onClose={onClose} wide>
       <Field label="Tên dự án" req><input className={inputCls} value={f.name} onChange={(e) => set("name", e.target.value)} /></Field>
       <Field label="Mục tiêu"><textarea className={inputCls} rows={2} value={f.goal} onChange={(e) => set("goal", e.target.value)} /></Field>
       <div className="grid grid-cols-2 gap-x-3">
-        <Field label="Phụ trách dự án" req><UserSelect value={f.ownerId} onChange={(v) => set("ownerId", v)} /></Field>
+        <Field label="Phụ trách dự án (Owner)" req><UserSelect value={f.ownerId} onChange={(v) => set("ownerId", v)} /></Field>
+        <Field label="Điều phối (PM)"><UserSelect value={f.managerId} onChange={(v) => set("managerId", v)} /></Field>
         <Field label="Ưu tiên"><select className={inputCls} value={f.priority} onChange={(e) => set("priority", e.target.value)}>{PRIORITY_ORDER.map((p) => <option key={p} value={p}>{PRIORITIES[p].label}</option>)}</select></Field>
+        <Field label="Brand"><select className={inputCls} value={f.brandId || "shared"} onChange={(e) => set("brandId", e.target.value === "shared" ? "shared" : e.target.value)}>{PROJECT_BRAND_ORDER.map((b) => <option key={b} value={b}>{BRANDS[b].label}</option>)}</select></Field>
         <Field label="Bắt đầu"><input type="date" className={inputCls} value={f.start} onChange={(e) => set("start", e.target.value)} /></Field>
         <Field label="Deadline" req><input type="date" className={inputCls} value={f.deadline} onChange={(e) => set("deadline", e.target.value)} /></Field>
       </div>
-      <Field label="Brand"><select className={inputCls} value={f.brandId || ""} onChange={(e) => set("brandId", e.target.value || null)}><option value="">Chung (cả 2 brand)</option>{BRAND_ORDER.map((b) => <option key={b} value={b}>{BRANDS[b].label}</option>)}</select></Field>
       <Field label="Phòng ban tham gia">
         <div className="flex flex-wrap gap-1.5">
           {activeDepts(db).map((d) => <button key={d.id} onClick={() => set("deptIds", f.deptIds.includes(d.id) ? f.deptIds.filter((x) => x !== d.id) : [...f.deptIds, d.id])} className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${f.deptIds.includes(d.id) ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-500"}`}>{d.name}</button>)}
@@ -2265,15 +2386,23 @@ function ProjectDetail({ id }) {
   const members = [...new Set(pts.flatMap((t) => [t.ownerId, ...(t.collaboratorIds || [])]).filter(Boolean))];
   const editable = ["admin", "ceo"].includes(me.role) || p.ownerId === me.id;
   const canAddTask = canCreateTaskFor(db, me, { deptId: me.deptId, projectId: id, ownerId: me.id }).ok;
-  const tabs = [["overview", "Tổng quan"], ["tasks", "Công việc"], ["timeline", "Timeline"], ["members", "Thành viên"], ["issues", "Vấn đề"]];
+  const health = computeProjectHealth(db, p);
+  const msP = milestoneProgress(p);
+  const openBlk = (p.issues || []).filter((i) => i.status !== "RESOLVED").length;
+  const critLeft = pts.filter((t) => ["high", "urgent"].includes(t.priority) && t.status !== "done").length;
+  const stuckReqCnt = db.requests.filter((r) => !r.deleted && r.projectId === id && ["pending", "info", "deadline_proposed"].includes(r.status)).length;
+  const msCount = (p.milestones || []).length;
+  const decCount = (p.decisions || []).length;
+  const tabs = [["overview", "Tổng quan"], ["milestones", `Milestone${msCount ? " · " + msCount : ""}`], ["tasks", "Công việc"], ["timeline", "Timeline"], ["members", "Thành viên"], ["issues", "Vấn đề"], ["decisions", `Quyết định${decCount ? " · " + decCount : ""}`]];
   return (
     <div>
       <button className={`${btnGhost} mb-2`} onClick={() => nav("projects")}><ChevronLeft className="h-3.5 w-3.5" />Dự án</button>
       <div className="mb-1 flex items-center gap-2.5 flex-wrap">
         <span className="font-mono text-[11px] text-zinc-400">{p.code}</span>
         <h1 className="text-lg font-semibold text-zinc-900">{p.name}</h1>
-        <BrandChip id={p.brandId} />
+        <BrandChip id={projBrand(p)} />
         <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${PROJECT_STATUSES[p.status].pill}`}>{PROJECT_STATUSES[p.status].label}</span>
+        <HealthBadge h={health} />
         <PriorityPill p={p.priority} />
         {editable && (
           <select className="ml-auto rounded-lg border border-zinc-200 px-2 py-1 text-xs" value={p.status} onChange={(e) => { act.updateProject(id, { status: e.target.value }); toast("Đã đổi trạng thái dự án"); }}>
@@ -2288,16 +2417,41 @@ function ProjectDetail({ id }) {
         {canAddTask && <button className={`${btnGhost} ml-auto mb-1`} onClick={() => setCreating(true)}><Plus className="h-3.5 w-3.5" />Thêm task</button>}
       </div>
       {tab === "overview" && (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <div className="rounded-xl border border-zinc-100 bg-white p-4 space-y-2 text-[13px]">
-            <p><span className="text-zinc-400">Phụ trách:</span> <UserChip id={p.ownerId} /></p>
-            <p><span className="text-zinc-400">Theo dõi:</span> <AvatarGroup ids={p.watcherIds} /></p>
-            <p className="flex items-start gap-1"><span className="text-zinc-400 shrink-0">Phòng ban:</span> <span className="flex flex-wrap gap-1">{p.deptIds.map((d) => <DeptTag key={d} id={d} />)}</span></p>
-            <p><span className="text-zinc-400">Thời gian:</span> {fmtDFull(p.start)} → {fmtDFull(p.deadline)}</p>
-            <p className="text-zinc-600">{p.desc}</p>
-            {p.planLink && <a className="inline-flex items-center gap-1.5 text-zinc-700 hover:underline" href={p.planLink} target="_blank" rel="noreferrer"><FileText className="h-3.5 w-3.5 text-zinc-400" />File kế hoạch<ExternalLink className="h-3 w-3 text-zinc-300" /></a>}
+        <div className="space-y-3">
+          {/* Sức khỏe dự án — tự động, có lý do cụ thể (không phải chỉ 1 con số/màu) */}
+          <div className={`rounded-xl border p-4 ${HEALTH[health.level].pill}`}>
+            <div className="flex items-center gap-2 mb-2">
+              <span className={`h-2 w-2 rounded-full ${HEALTH[health.level].dot}`} />
+              <span className="text-[13px] font-semibold">Sức khỏe: {HEALTH[health.level].label}</span>
+              {health.level === "ON_TRACK" && <span className="text-[11px] opacity-70">Không có rủi ro nổi bật</span>}
+            </div>
+            {health.reasons.length > 0 && (
+              <ul className="text-[12px] space-y-0.5 list-disc pl-5">
+                {health.reasons.map((r, i) => <li key={i}>{r}</li>)}
+              </ul>
+            )}
           </div>
-          <MiniTaskList title="Task đang chạy" tasks={pts.filter((t) => !["done", "paused"].includes(t.status))} />
+          {/* Số liệu đa chiều: không kết luận dự án tốt bằng 1 con số */}
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
+            <MetricCell label="Task xong" value={`${done}/${pts.length}`} />
+            <MetricCell label="Tiến độ (trọng số)" value={`${pct}%`} />
+            <MetricCell label="Milestone xong" value={`${msP.done}/${msP.total}`} />
+            <MetricCell label="Việc ưu tiên chưa xong" value={critLeft} tone={critLeft ? "text-amber-600" : ""} />
+            <MetricCell label="Blocker đang mở" value={openBlk} tone={openBlk ? "text-red-600" : ""} />
+            <MetricCell label="Yêu cầu bị tắc" value={stuckReqCnt} tone={stuckReqCnt ? "text-sky-600" : ""} />
+          </div>
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            <div className="rounded-xl border border-zinc-100 bg-white p-4 space-y-2 text-[13px]">
+              <p><span className="text-zinc-400">Phụ trách:</span> <UserChip id={p.ownerId} /></p>
+              {p.managerId && <p><span className="text-zinc-400">Điều phối (PM):</span> <UserChip id={p.managerId} /></p>}
+              <p><span className="text-zinc-400">Theo dõi:</span> <AvatarGroup ids={p.watcherIds} /></p>
+              <p className="flex items-start gap-1"><span className="text-zinc-400 shrink-0">Phòng ban:</span> <span className="flex flex-wrap gap-1">{p.deptIds.map((d) => <DeptTag key={d} id={d} />)}</span></p>
+              <p><span className="text-zinc-400">Thời gian:</span> {fmtDFull(p.start)} → {fmtDFull(p.deadline)}{p.forecastDeadline && <span className="text-amber-600"> · dự báo {fmtDFull(p.forecastDeadline)}</span>}</p>
+              <p className="text-zinc-600">{p.desc}</p>
+              {p.planLink && <a className="inline-flex items-center gap-1.5 text-zinc-700 hover:underline" href={p.planLink} target="_blank" rel="noreferrer"><FileText className="h-3.5 w-3.5 text-zinc-400" />File kế hoạch<ExternalLink className="h-3 w-3 text-zinc-300" /></a>}
+            </div>
+            <MiniTaskList title="Task đang chạy" tasks={pts.filter((t) => !["done", "paused"].includes(t.status))} />
+          </div>
         </div>
       )}
       {tab === "tasks" && <TasksView tasks={pts} showDeptFilter />}
@@ -2308,6 +2462,8 @@ function ProjectDetail({ id }) {
         </div>
       )}
       {tab === "issues" && <BlockersTab p={p} />}
+      {tab === "milestones" && <MilestonesTab p={p} editable={editable} msP={msP} />}
+      {tab === "decisions" && <DecisionsTab p={p} editable={editable} />}
       {creating && <TaskForm defaults={{ projectId: id }} onClose={() => setCreating(false)} />}
     </div>
   );
@@ -2400,6 +2556,129 @@ function BlockersTab({ p }) {
           <Field label="Đã xử lý thế nào? (bắt buộc)" req><textarea className={inputCls} rows={2} value={resolving.note || ""} onChange={(e) => setResolving({ ...resolving, note: e.target.value })} /></Field>
           <div className="flex justify-end gap-2"><button className={btnSec} onClick={() => setResolving(null)}>Hủy</button><button className={btnPri} disabled={!resolving.note?.trim()} onClick={() => { act.resolveBlocker(p.id, resolving.id, resolving.note); setResolving(null); toast("Đã đóng blocker"); }}>Đóng blocker</button></div>
         </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ===== Health badge + ô số liệu (dùng cho dự án) ===== */
+function HealthBadge({ h }) {
+  if (!h) return null;
+  const m = HEALTH[h.level];
+  return <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${m.pill}`} title={h.reasons.join(" · ")}><span className={`h-1.5 w-1.5 rounded-full ${m.dot}`} />{m.label}</span>;
+}
+function MetricCell({ label, value, tone = "" }) {
+  return <div className="rounded-lg border border-zinc-100 bg-white p-2.5"><p className={`text-lg font-semibold tabular-nums ${tone || "text-zinc-800"}`}>{value}</p><p className="mt-0.5 text-[10px] leading-tight text-zinc-400">{label}</p></div>;
+}
+
+/* ===== Milestone: mốc lớn của dự án — CEO theo dõi milestone thay vì từng task nhỏ ===== */
+function MilestonesTab({ p, editable, msP }) {
+  const { db, act, toast } = useApp();
+  const [adding, setAdding] = useState(false);
+  const blank = { name: "", ownerId: p.ownerId, approverId: null, plannedDeadline: D(14), weight: 2, expectedOutput: "", acceptanceCriteria: "" };
+  const [f, setF] = useState(blank);
+  const ms = [...(p.milestones || [])].sort((a, b) => (a.plannedDeadline || "9999-99-99") > (b.plannedDeadline || "9999-99-99") ? 1 : -1);
+  return (
+    <div>
+      {ms.length > 0 && (
+        <div className="mb-3 flex items-center gap-3 max-w-md"><ProgressBar v={msP.pct} cls="bg-zinc-800" /><span className="text-xs text-zinc-500 whitespace-nowrap">{msP.done}/{msP.total} milestone · {msP.pct}%</span></div>
+      )}
+      {ms.length === 0 && <EmptyState icon={CheckCircle2} title="Chưa có milestone" hint="Chia dự án thành các mốc lớn để CEO theo dõi mà không cần xem từng task nhỏ." />}
+      <div className="space-y-2.5">
+        {ms.map((m) => {
+          const over = msOverdue(m), soon = msDueSoon(m);
+          return (
+            <div key={m.id} className="rounded-xl border border-zinc-100 bg-white p-3">
+              <div className="flex items-start gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-[13px] font-medium text-zinc-800">{m.name}</p>
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${MILESTONE_STATUSES[m.status].pill}`}>{MILESTONE_STATUSES[m.status].label}</span>
+                    {over && <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-600">QUÁ HẠN</span>}
+                    {!over && soon && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">SẮP HẠN</span>}
+                    <span className="text-[10px] text-zinc-400">trọng số {m.weight || 1}</span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-500">
+                    <span>Phụ trách: <b className="text-zinc-700">{userById(db, m.ownerId)?.name || "—"}</b></span>
+                    {m.approverId && <span>Duyệt: {userById(db, m.approverId)?.name}</span>}
+                    {m.plannedDeadline && <span className={over ? "text-red-600 font-medium" : ""}>Hạn: {fmtDFull(m.plannedDeadline)}</span>}
+                    {m.actualCompletedAt && <span className="text-emerald-600">Xong: {fmtDFull(iso(m.actualCompletedAt))}</span>}
+                    {(m.relatedTaskIds || []).length > 0 && <span>{m.relatedTaskIds.length} task gắn</span>}
+                  </div>
+                  {m.expectedOutput && <p className="mt-1 text-[12px] text-zinc-600"><b className="text-zinc-500">Đầu ra:</b> {m.expectedOutput}</p>}
+                  {m.acceptanceCriteria && <p className="text-[12px] text-zinc-600"><b className="text-zinc-500">Nghiệm thu:</b> {m.acceptanceCriteria}</p>}
+                </div>
+                {editable && (
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <select className="rounded-md border border-zinc-200 px-1.5 py-1 text-[11px] text-zinc-600" value={m.status} onChange={(e) => { act.updateMilestone(p.id, m.id, { status: e.target.value }); toast("Đã cập nhật milestone"); }}>
+                      {MILESTONE_ORDER.map((k) => <option key={k} value={k}>{MILESTONE_STATUSES[k].label}</option>)}
+                    </select>
+                    <button className="text-zinc-300 hover:text-red-500" title="Xóa" onClick={() => { if (window.confirm("Xóa milestone này?")) { act.deleteMilestone(p.id, m.id); toast("Đã xóa milestone"); } }}><Trash2 className="h-3.5 w-3.5" /></button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {editable && !adding && <button className={`${btnSec} mt-3`} onClick={() => setAdding(true)}><Plus className="h-4 w-4" />Thêm milestone</button>}
+      {adding && (
+        <div className="mt-3 rounded-xl border border-zinc-100 p-3">
+          <Field label="Tên milestone" req><input className={inputCls} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="VD: M4. Launch" /></Field>
+          <div className="grid grid-cols-2 gap-x-3">
+            <Field label="Phụ trách" req><UserSelect value={f.ownerId} onChange={(v) => setF({ ...f, ownerId: v })} /></Field>
+            <Field label="Người duyệt"><UserSelect value={f.approverId} onChange={(v) => setF({ ...f, approverId: v })} /></Field>
+            <Field label="Hạn"><input type="date" className={inputCls} value={f.plannedDeadline} onChange={(e) => setF({ ...f, plannedDeadline: e.target.value })} /></Field>
+            <Field label="Trọng số"><select className={inputCls} value={f.weight} onChange={(e) => setF({ ...f, weight: Number(e.target.value) })}>{[1, 2, 3, 4].map((w) => <option key={w} value={w}>{w}</option>)}</select></Field>
+          </div>
+          <Field label="Đầu ra mong đợi"><input className={inputCls} value={f.expectedOutput} onChange={(e) => setF({ ...f, expectedOutput: e.target.value })} /></Field>
+          <Field label="Tiêu chí nghiệm thu"><input className={inputCls} value={f.acceptanceCriteria} onChange={(e) => setF({ ...f, acceptanceCriteria: e.target.value })} /></Field>
+          <div className="flex justify-end gap-2"><button className={btnSec} onClick={() => { setAdding(false); setF(blank); }}>Hủy</button><button className={btnPri} disabled={!f.name.trim() || !f.ownerId} onClick={() => { act.addMilestone(p.id, f); setAdding(false); setF(blank); toast("Đã thêm milestone"); }}>Thêm</button></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ===== Decision Log: nhật ký quyết định — append-only, đổi quyết định = tạo mới + supersede ===== */
+function DecisionsTab({ p, editable }) {
+  const { db, me, act, toast } = useApp();
+  const [adding, setAdding] = useState(false);
+  const blank = { title: "", decision: "", reason: "", impact: "", supersedesId: "" };
+  const [f, setF] = useState(blank);
+  const decs = p.decisions || [];
+  const isSuperseded = (d) => decs.some((x) => x.supersedesId === d.id);
+  return (
+    <div>
+      <p className="mb-2 text-[12px] text-zinc-400">Nhật ký quyết định — chỉ ghi thêm, không sửa/xóa. Muốn đổi quyết định cũ thì tạo quyết định mới thay thế nó.</p>
+      {decs.length === 0 && <EmptyState icon={FileText} title="Chưa có quyết định nào" hint="Ghi lại các quyết định quan trọng: chọn NCC, dời launch, đổi giá… để không tranh cãi về sau." />}
+      <div className="space-y-2.5">
+        {decs.map((d) => (
+          <div key={d.id} className={`rounded-xl border p-3 ${isSuperseded(d) ? "border-zinc-100 bg-zinc-50 opacity-70" : "border-zinc-100 bg-white"}`}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-[13px] font-semibold text-zinc-800">{d.title}</p>
+              {isSuperseded(d) && <span className="rounded-full bg-zinc-200 px-1.5 py-0.5 text-[10px] text-zinc-500">Đã thay thế</span>}
+              {d.supersedesId && <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">Thay quyết định trước</span>}
+            </div>
+            <p className="mt-1 text-[13px] text-zinc-700">{d.decision}</p>
+            {d.reason && <p className="mt-1 text-[12px] text-zinc-500"><b>Lý do:</b> {d.reason}</p>}
+            {d.impact && <p className="text-[12px] text-zinc-500"><b>Tác động:</b> {d.impact}</p>}
+            <p className="mt-1 text-[11px] text-zinc-400">{userById(db, d.decidedById)?.name || "—"} · {fmtDFull(iso(d.decidedAt))}</p>
+          </div>
+        ))}
+      </div>
+      {editable && !adding && <button className={`${btnSec} mt-3`} onClick={() => setAdding(true)}><Plus className="h-4 w-4" />Ghi quyết định</button>}
+      {adding && (
+        <div className="mt-3 rounded-xl border border-zinc-100 p-3">
+          <Field label="Tiêu đề" req><input className={inputCls} value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="VD: Dời launch 7 ngày" /></Field>
+          <Field label="Nội dung quyết định" req><textarea className={inputCls} rows={2} value={f.decision} onChange={(e) => setF({ ...f, decision: e.target.value })} /></Field>
+          <div className="grid grid-cols-2 gap-x-3">
+            <Field label="Lý do"><input className={inputCls} value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} /></Field>
+            <Field label="Tác động"><input className={inputCls} value={f.impact} onChange={(e) => setF({ ...f, impact: e.target.value })} /></Field>
+          </div>
+          {decs.length > 0 && <Field label="Thay thế quyết định cũ (nếu có)"><select className={inputCls} value={f.supersedesId} onChange={(e) => setF({ ...f, supersedesId: e.target.value })}><option value="">— Không —</option>{decs.filter((x) => !isSuperseded(x)).map((x) => <option key={x.id} value={x.id}>{x.title}</option>)}</select></Field>}
+          <div className="flex justify-end gap-2"><button className={btnSec} onClick={() => { setAdding(false); setF(blank); }}>Hủy</button><button className={btnPri} disabled={!f.title.trim() || !f.decision.trim()} onClick={() => { act.addDecision(p.id, { ...f, decidedById: me.id }); setAdding(false); setF(blank); toast("Đã ghi quyết định"); }}>Ghi lại</button></div>
+        </div>
       )}
     </div>
   );
@@ -3839,6 +4118,12 @@ export default function App() {
     },
     createProject: (f) => setDb((prev) => ({ ...prev, projects: [...prev.projects, { id: uid("p"), code: `PRJ-${String(prev.projects.length + 1).padStart(2, "0")}`, watcherIds: [], issues: [], status: "prep", desc: "", ...f }] })),
     updateProject: (id, patch) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === id ? { ...p, ...patch } : p) })),
+    /* ---- Milestone (dữ liệu nằm trên project.milestones, tự đồng bộ Supabase qua projectToRow) ---- */
+    addMilestone: (projectId, f) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, milestones: [...(p.milestones || []), { id: uid("ms"), name: f.name, desc: f.desc || "", ownerId: f.ownerId || null, approverId: f.approverId || null, plannedStart: f.plannedStart || null, plannedDeadline: f.plannedDeadline || null, actualCompletedAt: null, status: f.status || "NOT_STARTED", weight: f.weight || 1, expectedOutput: f.expectedOutput || "", acceptanceCriteria: f.acceptanceCriteria || "", relatedTaskIds: f.relatedTaskIds || [], createdAt: Date.now(), updatedAt: Date.now() }] } : p) })),
+    updateMilestone: (projectId, mid, patch) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, milestones: (p.milestones || []).map((m) => m.id === mid ? { ...m, ...patch, ...(patch.status === "COMPLETED" && !m.actualCompletedAt ? { actualCompletedAt: Date.now() } : {}), ...(patch.status && patch.status !== "COMPLETED" ? { actualCompletedAt: null } : {}), updatedAt: Date.now() } : m) } : p) })),
+    deleteMilestone: (projectId, mid) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, milestones: (p.milestones || []).filter((m) => m.id !== mid) } : p) })),
+    /* ---- Decision Log (append-only; đổi quyết định cũ = tạo mới + supersedesId) ---- */
+    addDecision: (projectId, f) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, decisions: [{ id: uid("dec"), title: f.title, decision: f.decision, decidedById: f.decidedById || me.id, decidedAt: Date.now(), reason: f.reason || "", impact: f.impact || "", supersedesId: f.supersedesId || null, relatedTaskIds: f.relatedTaskIds || [] }, ...(p.decisions || [])] } : p) })),
     createRequest: (f) => setDb((prev) => {
       const r = { id: uid("r"), code: nextReqCode(prev), deadlineProposals: [], pendingHandlerId: null, reqType: f.reqType || null, ...f, isConfidential: !!f.isConfidential, allowedViewerIds: f.allowedViewerIds || [], brandId: f.brandId || deptBrand(prev, me.deptId) || deptBrand(prev, f.toDeptId) || null, fromDeptId: me.deptId, fromUserId: meId, receiverId: null, handlerId: null, agreedDeadline: null, status: "pending", rejectReason: "", attachments: [], comments: [], logs: [{ id: uid("l"), userId: meId, at: Date.now(), text: "tạo yêu cầu phối hợp" }], taskId: null, createdAt: Date.now() };
       let next = { ...prev, requests: [r, ...prev.requests] };
@@ -4138,7 +4423,7 @@ export default function App() {
 }
 
 /* Export nội bộ phục vụ unit test (không dùng trong UI) */
-export const __internals = { buildSeed, perms, runScheduler, runAlerts, occursToday, canManage, canCreateTaskFor, canApplyTaskPatch, assignableUsers, canViewProject, canViewRequest, canViewDoc, deptReceiverId, isReceiverFor, userById, deptById, getEligibleApprovers, isSenderAuthorized, APPROVER_RULES, TASK_FIELD_PERM, TASK_FIELD_FORBIDDEN };
+export const __internals = { buildSeed, perms, runScheduler, runAlerts, occursToday, canManage, canCreateTaskFor, canApplyTaskPatch, assignableUsers, canViewProject, canViewRequest, canViewDoc, deptReceiverId, isReceiverFor, userById, deptById, getEligibleApprovers, isSenderAuthorized, APPROVER_RULES, TASK_FIELD_PERM, TASK_FIELD_FORBIDDEN, computeProjectHealth, milestoneProgress, weightedTaskProgress, msOverdue, msDueSoon, projBrand };
 /* ============================================================
    HR WORKSPACE — quy trình nhân sự dựa trên task
    Phạm vi: onboarding, thử việc, đào tạo, hồ sơ, offboarding,
