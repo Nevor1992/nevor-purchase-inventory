@@ -5,13 +5,14 @@ import {
   MessageSquare, Paperclip, History, Users, Filter, LayoutList, LayoutGrid,
   Gauge, Pin, Send, Edit3, LogOut, ChevronDown, ChevronLeft,
   ChevronRight, ChevronsLeft, CheckCircle2, PauseCircle, RotateCcw,
-  FileText, ExternalLink, Repeat, Trash2, PinOff, CornerDownRight, Star, Save, Lock
+  FileText, ExternalLink, Repeat, Trash2, PinOff, CornerDownRight, Star, Save, Lock, Download
 } from "lucide-react";
 import { btnPri, btnSec, btnGhost, btnDanger, inputCls, cardCls, popoverCls, STATUS_TONE, PRIORITY_TONE } from "./ui/tokens.js";
 import { PageHeader, Skeleton, SkeletonRows, DeadlineChip, Dot, Tooltip, ErrorBoundary } from "./ui/primitives.jsx";
 import { SUPABASE_ENABLED, SUPABASE_CONFIG_ERROR, DEMO_FORCED } from "./lib/supabase.js";
 import { signIn, signOut, getSession, onAuthChange } from "./lib/auth.js";
 import { loadDb, syncChanges, subscribeRealtime, adminCreateUser, adminSetUserStatus, uploadAttachment, signedAttachmentUrl } from "./lib/db.js";
+import { toCsv, downloadFile, stampName } from "./lib/export.js";
 
 /* ============================================================
    NOVIX WORK — Quản lý công việc nội bộ v0.2.0-uat-prep
@@ -2783,7 +2784,7 @@ function AdminPage() {
     <div>
       <h1 className="mb-4 text-lg font-semibold text-zinc-900">Quản trị</h1>
       <div className="mb-4 flex gap-1 border-b border-zinc-100">
-        {[["users", "Thành viên"], ["depts", "Phòng ban"], ["recurring", "Task định kỳ"], ["trash", "Thùng rác"], ["rolelog", "Nhật ký phân quyền"], ["config", "Cấu hình"]].map(([k, lb]) => <button key={k} onClick={() => setTab(k)} className={`px-3 py-2 text-[13px] font-medium border-b-2 -mb-px ${tab === k ? "border-zinc-900 text-zinc-900" : "border-transparent text-zinc-400"}`}>{lb}</button>)}
+        {[["users", "Thành viên"], ["depts", "Phòng ban"], ["recurring", "Task định kỳ"], ["export", "Xuất dữ liệu"], ["trash", "Thùng rác"], ["rolelog", "Nhật ký phân quyền"], ["config", "Cấu hình"]].map(([k, lb]) => <button key={k} onClick={() => setTab(k)} className={`px-3 py-2 text-[13px] font-medium border-b-2 -mb-px ${tab === k ? "border-zinc-900 text-zinc-900" : "border-transparent text-zinc-400"}`}>{lb}</button>)}
       </div>
       {tab === "users" && (
         <div className="space-y-3">
@@ -2799,7 +2800,7 @@ function AdminPage() {
             <tbody>
               {db.users.map((u) => {
                 const inactive = u.isActive === false;
-                const isSelf = u.id === meId;
+                const isSelf = u.id === me.id;
                 const canManage = SUPABASE_ENABLED && !isSelf && (u.role !== "ceo" || me.role === "ceo");
                 return (
                 <tr key={u.id} className={`border-b border-zinc-50 last:border-0 ${inactive ? "opacity-55" : ""}`}>
@@ -2903,6 +2904,69 @@ function AdminPage() {
             <button className={btnPri} disabled={!roleModal.reason.trim()} onClick={() => { const r = act.adminUpdateUser(roleModal.userId, { role: roleModal.role }, roleModal.reason.trim()); toast(r.ok ? "Đã đổi vai trò" : r.msg, r.ok ? "ok" : "err"); setRoleModal(null); }}>Xác nhận</button></div>
         </Modal>
       )}
+      {tab === "export" && (() => {
+        const iso = (v) => { if (!v) return ""; const d = new Date(v); return isNaN(d.getTime()) ? String(v) : d.toISOString(); };
+        const tasks = db.tasks.filter((t) => !t.deleted);
+        const taskCols = [
+          { label: "Mã", get: (t) => t.code }, { label: "Tên công việc", get: (t) => t.name },
+          { label: "Phòng ban", get: (t) => deptById(db, t.deptId)?.name || t.deptId },
+          { label: "Người phụ trách", get: (t) => userById(db, t.ownerId)?.name || "" },
+          { label: "Người giao", get: (t) => userById(db, t.assignerId)?.name || "" },
+          { label: "Người duyệt", get: (t) => userById(db, t.approverId)?.name || "" },
+          { label: "Trạng thái", get: (t) => STATUSES[t.status]?.label || t.status },
+          { label: "Ưu tiên", get: (t) => PRIORITIES[t.priority]?.label || t.priority },
+          { label: "Loại", get: (t) => TASK_TYPES[t.type] || t.type },
+          { label: "Deadline", get: (t) => t.deadline || "" }, { label: "Tiến độ (%)", get: (t) => t.progress ?? 0 },
+          { label: "Dự án", get: (t) => projById(db, t.projectId)?.name || "" },
+          { label: "Bảo mật", get: (t) => (t.isConfidential ? "Có" : "") },
+          { label: "Ngày tạo", get: (t) => iso(t.createdAt) },
+        ];
+        const reqs = (db.requests || []).filter((r) => !r.deleted);
+        const reqCols = [
+          { label: "Mã", get: (r) => r.code }, { label: "Tiêu đề", get: (r) => r.title },
+          { label: "Phòng gửi", get: (r) => deptById(db, r.fromDeptId)?.name || r.fromDeptId },
+          { label: "Phòng nhận", get: (r) => deptById(db, r.toDeptId)?.name || r.toDeptId },
+          { label: "Người gửi", get: (r) => userById(db, r.fromUserId)?.name || "" },
+          { label: "Người xử lý", get: (r) => userById(db, r.handlerId)?.name || "" },
+          { label: "Trạng thái", get: (r) => REQ_STATUSES[r.status]?.label || r.status },
+          { label: "Ưu tiên", get: (r) => PRIORITIES[r.priority]?.label || r.priority },
+          { label: "Deadline chốt", get: (r) => r.agreedDeadline || "" },
+        ];
+        const userCols = [
+          { label: "Tên", get: (u) => u.name }, { label: "Email", get: (u) => u.email || "" },
+          { label: "Vai trò", get: (u) => ROLE_LABELS[u.role] || u.role },
+          { label: "Phòng ban", get: (u) => deptById(db, u.deptId)?.name || "" },
+          { label: "Chức danh", get: (u) => u.title || "" },
+          { label: "Trạng thái", get: (u) => (u.isActive === false ? "Vô hiệu hoá" : "Hoạt động") },
+        ];
+        const dlCsv = (rows, cols, base) => { downloadFile(stampName(base, "csv"), toCsv(rows, cols), "text/csv"); toast(`Đã xuất ${rows.length} dòng`); };
+        const dlJson = () => {
+          const dump = { exportedAt: new Date().toISOString(), source: "NovixWork",
+            users: db.users, departments: db.depts, projects: db.projects, tasks, requests: reqs,
+            documents: db.docs || [], hrProcesses: db.hrProcesses || [] };
+          downloadFile(stampName("novixwork_full", "json"), JSON.stringify(dump, null, 2), "application/json");
+          toast("Đã xuất JSON toàn bộ");
+        };
+        const Btn = ({ onClick, children, n }) => <button className={btnSec} onClick={onClick}><Download className="h-4 w-4" />{children}<span className="text-zinc-400">· {n}</span></button>;
+        return (
+          <div className="max-w-2xl space-y-4">
+            <div className="rounded-xl border border-zinc-100 bg-white p-4">
+              <p className="mb-1 text-[13px] font-semibold text-zinc-800">Xuất ra file cho phần mềm khác</p>
+              <p className="mb-3 text-xs text-zinc-500">CSV mở bằng Excel / Google Sheets / Power BI (đã kèm BOM UTF-8, tiếng Việt hiển thị đúng). JSON dùng cho tích hợp/lập trình. Chỉ xuất phần dữ liệu bạn có quyền xem.</p>
+              <div className="flex flex-wrap gap-2">
+                <Btn onClick={() => dlCsv(tasks, taskCols, "novixwork_congviec")} n={tasks.length}>CSV Công việc</Btn>
+                <Btn onClick={() => dlCsv(reqs, reqCols, "novixwork_yeucau")} n={reqs.length}>CSV Yêu cầu phối hợp</Btn>
+                <Btn onClick={() => dlCsv(db.users, userCols, "novixwork_thanhvien")} n={db.users.length}>CSV Thành viên</Btn>
+                <button className={btnPri} onClick={dlJson}><Download className="h-4 w-4" />JSON toàn bộ</button>
+              </div>
+            </div>
+            <div className="rounded-xl border border-zinc-100 bg-white p-4 text-xs text-zinc-500 space-y-1">
+              <p className="text-[13px] font-semibold text-zinc-700">Cần đọc dữ liệu TRỰC TIẾP (không qua file)?</p>
+              <p>Supabase cấp sẵn REST API: phần mềm khác (n8n, Zapier, Power BI, script…) đọc bảng qua <code className="rounded bg-zinc-100 px-1">/rest/v1/&lt;bảng&gt;</code> với anon key + Row Level Security. Cần hướng dẫn kết nối chi tiết thì báo — sẽ soạn tài liệu API riêng.</p>
+            </div>
+          </div>
+        );
+      })()}
       {tab === "config" && (
         <div className="max-w-lg rounded-xl border border-zinc-100 bg-white p-4 text-[13px] text-zinc-600 space-y-2">
           <p><b className="text-zinc-800">Trạng thái công việc:</b> cố định 7 trạng thái theo quy trình Novix — không cho tự tạo thêm ở phiên bản đầu.</p>
