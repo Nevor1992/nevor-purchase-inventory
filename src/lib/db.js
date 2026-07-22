@@ -41,10 +41,10 @@ export async function loadDb() {
        trả rỗng thay vì làm vỡ toàn bộ loadDb → app vẫn chạy, chỉ chưa có
        nhãn vai trò tùy chỉnh. */
     supabase.from("app_settings").select("*").then((r) => (r.error ? [] : (r.data || []))),
-    /* Chịu lỗi nếu chưa áp migration 000013 (audit_log) */
-    supabase.from("audit_log").select("*").order("at", { ascending: false }).limit(500).then((r) => (r.error ? [] : (r.data || []))),
+    /* Chịu lỗi nếu chưa áp migration 000013 (mở rộng audit_log) */
+    supabase.from("audit_log").select("*").order("created_at", { ascending: false }).limit(500).then((r) => (r.error ? [] : (r.data || []))),
   ]);
-  const audit = (auditRows || []).map((r) => ({ id: r.id, at: r.at ? new Date(r.at).getTime() : null, actorId: r.actor_id, action: r.action, entity: r.entity, entityId: r.entity_id, entityLabel: r.entity_label || "", field: r.field || null, oldValue: r.old_value, newValue: r.new_value, reason: r.reason || "", brandId: r.brand_id, projectId: r.project_id }));
+  const audit = (auditRows || []).map((r) => ({ id: r.id, at: r.created_at ? new Date(r.created_at).getTime() : null, actorId: r.actor_id, action: r.action, entity: r.entity_type, entityId: r.entity_id, entityLabel: r.entity_label || "", field: r.field || null, oldValue: r.old_value, newValue: r.new_value, reason: r.reason || "", brandId: r.brand_id, projectId: r.project_id }));
   const roleLabels = (settings.find((s) => s.key === "role_labels") || {}).value || null;
 
   const collabsBy = groupBy(collabs, "task_id");
@@ -173,10 +173,14 @@ export async function syncChanges(prev, next) {
     const pm = prevById(prev.savedFilters);
     for (const f of next.savedFilters) if (pm.get(f.id) !== f) await upsert("saved_filters", [savedFilterToRow(f)]);
   }
-  /* audit_log: append-only (entries mới nằm ở đầu mảng do prepend) */
+  /* audit_log: append-only (entries mới nằm ở đầu mảng do prepend). INSERT thuần
+     (id mới mỗi lần) — hợp policy self-insert + rule chống sửa/xóa. */
   if (prev.audit !== next.audit && next.audit) {
     const added = next.audit.slice(0, Math.max(0, next.audit.length - (prev.audit?.length || 0)));
-    if (added.length) await upsert("audit_log", added.map((a) => ({ id: a.id, at: new Date(a.at).toISOString(), actor_id: a.actorId, action: a.action, entity: a.entity, entity_id: a.entityId, entity_label: a.entityLabel || null, field: a.field || null, old_value: a.oldValue, new_value: a.newValue, reason: a.reason || null, brand_id: a.brandId || null, project_id: a.projectId || null })));
+    if (added.length) {
+      const { error } = await supabase.from("audit_log").insert(added.map((a) => ({ id: a.id, created_at: new Date(a.at).toISOString(), actor_id: a.actorId, action: a.action, entity_type: a.entity, entity_id: a.entityId || null, entity_label: a.entityLabel || null, field: a.field || null, old_value: a.oldValue, new_value: a.newValue, reason: a.reason || null, brand_id: a.brandId || null, project_id: a.projectId || null })));
+      if (error) console.error("[sync] insert audit_log:", error.message);
+    }
   }
 }
 

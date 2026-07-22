@@ -131,6 +131,14 @@ insert into requests (id, code, title, from_user_id, from_dept_id, to_dept_id, v
   ('30000000-0000-0000-0000-000000000002', 'R-002', 'Đề xuất điều chỉnh lương',
    '00000000-0000-0000-0000-000000000003', 'content', 'hr', 'BOTH_DEPARTMENTS', true);
 
+-- Dự án test cho RLS ghi (Phase 1–3): owner = Hà; Mai là thành viên có quyền
+-- quản lý task; Huy là thành viên CHỈ xem; An hoàn toàn ngoài dự án.
+insert into projects (id, code, name, owner_id, dept_ids, members) values
+  ('40000000-0000-0000-0000-000000000001', 'PRJ-T', 'Dự án test RLS',
+   '00000000-0000-0000-0000-000000000007', array['ecom'],
+   '[{"userId":"00000000-0000-0000-0000-000000000004","leftAt":null,"perms":{"canManageTask":true}},
+     {"userId":"00000000-0000-0000-0000-000000000005","leftAt":null,"perms":{"canManageTask":false}}]'::jsonb);
+
 insert into notifications (user_id, body) values ('00000000-0000-0000-0000-000000000004', 'Thông báo cho Mai');
 
 insert into audit_log (actor_id, action, entity_type, entity_id)
@@ -229,11 +237,25 @@ begin
   call t('users: admin đổi role người khác → được', run_write(admin_, $q$update users set role='leader' where email='an@novix.vn'$q$), 1::bigint);
   call t('users: admin hoàn tác role → được',       run_write(admin_, $q$update users set role='employee' where email='an@novix.vn'$q$), 1::bigint);
 
-  -- ---- Audit log: bất biến, chỉ manager đọc ----
+  -- ---- Audit log: bất biến, chỉ manager đọc, self-insert (không mạo danh) ----
   call t('audit: admin đọc được',                   run_count(admin_, $q$select count(*) from audit_log$q$), 1::bigint);
   call t('audit: nhân viên KHÔNG đọc được',         run_count(mai, $q$select count(*) from audit_log$q$), 0::bigint);
-  call t('audit: user thường KHÔNG insert được',    run_denied(linh, $q$insert into audit_log (actor_id,action,entity_type,entity_id)
-      values ('00000000-0000-0000-0000-000000000003','create','task','10000000-0000-0000-0000-000000000001')$q$), true);
+  -- App ghi audit client-side bằng JWT người thao tác ⇒ tự ghi audit của MÌNH thì được…
+  call t('audit: user tự ghi audit của mình → được', run_write(linh, $q$insert into audit_log (actor_id,action,entity_type,entity_id)
+      values ('00000000-0000-0000-0000-000000000003','Đổi trạng thái milestone','milestone','10000000-0000-0000-0000-000000000001')$q$), 1::bigint);
+  -- …nhưng KHÔNG được mạo danh người khác (actor_id ≠ auth.uid())
+  call t('audit: KHÔNG mạo danh người khác → chặn',  run_denied(linh, $q$insert into audit_log (actor_id,action,entity_type,entity_id)
+      values ('00000000-0000-0000-0000-000000000004','Đổi trạng thái milestone','milestone','10000000-0000-0000-0000-000000000001')$q$), true);
+
+  -- ---- Project write RLS (Phase 1–3): owner/PM/thành-viên-có-quyền ghi được ----
+  -- Owner (Hà, leader — KHÔNG phải admin/ceo) sửa milestone của dự án mình → được
+  call t('project: owner (Hà) sửa milestone → được',      run_write(ha,  $q$update projects set milestones='[{"id":"m1"}]'::jsonb where code='PRJ-T'$q$), 1::bigint);
+  -- Thành viên có quyền quản lý task (Mai) ghi decision → được
+  call t('project: thành viên quản-lý (Mai) ghi → được',  run_write(mai, $q$update projects set decisions='[{"id":"d1"}]'::jsonb where code='PRJ-T'$q$), 1::bigint);
+  -- Thành viên CHỈ xem (Huy) → RLS lọc dòng, sửa 0 dòng
+  call t('project: thành viên chỉ-xem (Huy) → chặn',      run_write(huy, $q$update projects set milestones='[]'::jsonb where code='PRJ-T'$q$), 0::bigint);
+  -- Người ngoài dự án (An) → chặn
+  call t('project: người ngoài (An) → chặn',              run_write(an,  $q$update projects set milestones='[]'::jsonb where code='PRJ-T'$q$), 0::bigint);
 
   -- ---- Anon (chưa đăng nhập) bị khoá hoàn toàn khỏi dữ liệu ----
   call t('anon: KHÔNG đọc được users',              run_anon_denied($q$select count(*) from users$q$), true);

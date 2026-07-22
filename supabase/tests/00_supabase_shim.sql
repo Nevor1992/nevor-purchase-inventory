@@ -26,8 +26,20 @@ language sql stable as $$
   )::uuid
 $$;
 
+-- storage schema (Supabase provides it): minimal storage.objects for storage RLS tests
+create schema storage;
+create table storage.objects (
+  id uuid primary key default gen_random_uuid(),
+  bucket_id text,
+  name text,
+  owner uuid,
+  created_at timestamptz not null default now()
+);
+alter table storage.objects enable row level security;
+
 -- Supabase grants schema/table access broadly; RLS is the gate.
-grant usage on schema public, auth to anon, authenticated, service_role;
+grant usage on schema public, auth, storage to anon, authenticated, service_role;
+grant all on storage.objects to anon, authenticated, service_role;
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
 alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
 alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;

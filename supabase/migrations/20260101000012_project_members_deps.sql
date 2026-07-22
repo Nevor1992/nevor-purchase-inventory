@@ -19,3 +19,25 @@ alter table tasks add column if not exists depends_on_task_ids jsonb not null de
 comment on column projects.members is 'Thành viên dự án: vai trò (PROJECT_OWNER/MANAGER/DEPARTMENT_LEAD/MEMBER/WATCHER/APPROVER) + quyền chi tiết.';
 comment on column projects.change_requests is 'Đề xuất thay đổi lớn: {changeType,currentValue,proposedValue,reason,impact,requestedByUserId,approverId,status}.';
 comment on column tasks.depends_on_task_ids is 'Danh sách task phụ thuộc trước đó (chỉ cảnh báo, không tự đổi deadline).';
+
+-- Ghi dự án theo THÀNH VIÊN có quyền quản lý task (mirror memberCan(canManageTask)).
+-- Bổ sung cho policy owner/PM (000010) và admin/ceo (000001) — OR với nhau.
+drop policy if exists "projects: member manager mutate" on projects;
+create policy "projects: member manager mutate" on projects for all
+  to authenticated
+  using (
+    exists (
+      select 1 from jsonb_array_elements(coalesce(members, '[]'::jsonb)) mm
+      where (mm->>'userId')::uuid = auth.uid()
+        and (mm->>'leftAt') is null
+        and coalesce((mm->'perms'->>'canManageTask')::boolean, false)
+    )
+  )
+  with check (
+    exists (
+      select 1 from jsonb_array_elements(coalesce(members, '[]'::jsonb)) mm
+      where (mm->>'userId')::uuid = auth.uid()
+        and (mm->>'leftAt') is null
+        and coalesce((mm->'perms'->>'canManageTask')::boolean, false)
+    )
+  );

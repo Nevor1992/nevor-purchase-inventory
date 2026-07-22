@@ -1,43 +1,29 @@
 -- ============================================================
--- Phase 4: bảng audit_log riêng (append-only) cho các thao tác quan trọng.
---   Ghi: Actor · Action · Entity · Entity ID/Label · Old/New value · Reason ·
---        Brand · Project · Timestamp.
---   RLS:
---     - INSERT: người đăng nhập chỉ ghi được dòng có actor_id = chính mình
---       (không mạo danh). Ghi thêm, không sửa/xóa (không có policy UPDATE/DELETE).
---     - SELECT: chỉ manager/CEO (is_manager()) đọc toàn bộ; người thường không
---       xem nhật ký hệ thống.
+-- Phase 4: nối bảng audit_log CÓ SẴN (000000_init) cho audit tầng ứng dụng.
+--   Bảng audit_log đã tồn tại + RLS "managers read" (000001) + rule chống
+--   sửa/xóa (append-only). Ở đây chỉ mở rộng cho nhu cầu app:
+--     - action: enum → text (nhận nhãn hành động tiếng Việt tự do).
+--     - entity_id: cho phép null; old_value/new_value: jsonb → text (app ghi
+--       chuỗi ngắn, không cần jsonb).
+--     - Thêm cột: entity_label, brand_id, project_id.
+--     - Thêm policy INSERT: người đăng nhập chỉ ghi dòng actor_id = chính mình
+--       (không mạo danh). UPDATE/DELETE đã bị chặn bởi rule sẵn có ⇒ append-only.
 -- ============================================================
 
-create table if not exists audit_log (
-  id           text primary key,
-  at           timestamptz not null default now(),
-  actor_id     text references users(id),
-  action       text not null,
-  entity       text not null,
-  entity_id    text,
-  entity_label text,
-  field        text,
-  old_value    text,
-  new_value    text,
-  reason       text,
-  brand_id     text,
-  project_id   text,
-  created_at   timestamptz not null default now()
-);
+alter table audit_log alter column action type text using action::text;
+alter table audit_log alter column entity_id drop not null;
+alter table audit_log alter column old_value type text using old_value::text;
+alter table audit_log alter column new_value type text using new_value::text;
 
-create index if not exists audit_log_at_idx on audit_log (at desc);
+alter table audit_log add column if not exists entity_label text;
+alter table audit_log add column if not exists brand_id     text;
+alter table audit_log add column if not exists project_id   uuid references projects(id);
+
+create index if not exists audit_log_created_idx on audit_log (created_at desc);
 create index if not exists audit_log_project_idx on audit_log (project_id);
-create index if not exists audit_log_entity_idx on audit_log (entity, entity_id);
+create index if not exists audit_log_entity_idx  on audit_log (entity_type, entity_id);
 
-alter table audit_log enable row level security;
-
-drop policy if exists "audit: managers read" on audit_log;
-create policy "audit: managers read" on audit_log for select
-  to authenticated using (is_manager());
-
+-- Ghi thêm được (self-insert). Đọc: đã có policy "audit_log: managers read".
 drop policy if exists "audit: self insert" on audit_log;
 create policy "audit: self insert" on audit_log for insert
-  to authenticated with check (actor_id = auth.uid()::text);
-
--- Không có policy UPDATE/DELETE → append-only.
+  to authenticated with check (actor_id = auth.uid());
