@@ -614,9 +614,14 @@ function buildSeed() {
     const probTask = tasks.find((t) => t.name === "Đánh giá thử việc KOC Executive (Thảo)");
     if (probTask) hrProcesses.push({ id: uid("hp"), type: "probation", personName: "Thảo", userId: "thao", deptId: "koc", startDate: D(-58), taskIds: [probTask.id], status: "active", createdAt: Date.now() - 58 * DAY, closedAt: null, closeNote: "" });
   }
+  const seedAudit = [
+    { ...auditEntry("minh", { action: "Thêm thành viên dự án", entity: "project_member", entityLabel: "Thảo", newValue: "Thành viên", projectId: "prj1", brandId: "nevor" }), at: Date.now() - 5 * DAY },
+    { ...auditEntry("minh", { action: "Đổi trạng thái milestone", entity: "milestone", entityLabel: "M1. Chốt thông tin & giá sản phẩm", field: "status", oldValue: "IN_PROGRESS", newValue: "COMPLETED", projectId: "prj1", brandId: "nevor" }), at: Date.now() - 4 * DAY },
+    { ...auditEntry("minh", { action: "Ghi quyết định", entity: "decision", entityLabel: "Chốt nhà cung cấp đai lưng", reason: "Sample A đạt & giá tốt", projectId: "prj1", brandId: "nevor" }), at: Date.now() - 3 * DAY },
+  ];
   return {
     schema: 2, users: SEED_USERS, depts: SEED_DEPTS, projects: SEED_PROJECTS,
-    roleLogs: [], sentAlerts: {}, hrProcesses, recurrings,
+    roleLogs: [], sentAlerts: {}, hrProcesses, recurrings, audit: seedAudit,
     tasks, requests, docs: SEED_DOCS, notifs, savedFilters: [
       { id: "sf1", userId: "linh", name: "Việc phòng Content quá hạn", filter: { deptId: "content", quick: "overdue" } },
       { id: "sf2", userId: "ha", name: "Việc chờ tôi duyệt", filter: { quick: "myApprovals" } },
@@ -656,6 +661,8 @@ const isProjOwner = (db, u, t) => !!t.projectId && projById(db, t.projectId)?.ow
 const inProject = (db, u, projectId) => { const p = projById(db, projectId); return !!p && (p.ownerId === u.id || (p.watcherIds || []).includes(u.id) || p.deptIds.includes(u.deptId)); };
 /* quyền quản lý task = leader phòng sở hữu / project owner / admin / ceo */
 const canManage = (db, u, t) => isMgr(u) || isDeptLeader(db, u, t.deptId) || isProjOwner(db, u, t);
+/* quyền quản lý DỰ ÁN = admin/ceo · owner · PM · thành viên có quyền quản lý task */
+const canManageProject = (db, u, p) => !!u && !!p && (isMgr(u) || p.ownerId === u.id || p.managerId === u.id || memberCan(p, u.id, "canManageTask"));
 
 /* ---- Quyền xem dữ liệu BẢO MẬT — tách riêng, KHÔNG cấp mặc định cho system admin ----
    Hồ sơ nhân sự (task mật thuộc phòng HR): chỉ người liên quan, Leader HR,
@@ -1026,6 +1033,13 @@ const makeTask = (over = {}) => ({
   category: "GENERAL", locked: false, requiresAck: false, ackedAt: null,
   actual: { summary: "", links: [], note: "", submittedAt: null }, brandId: null, ...over,
 });
+/* ---------- Audit log (append-only): Actor·Action·Entity·Old/New·Reason·Brand·Project ---------- */
+const auditEntry = (actorId, o) => ({
+  id: uid("aud"), at: Date.now(), actorId, action: o.action, entity: o.entity, entityId: o.entityId || null,
+  entityLabel: o.entityLabel || "", field: o.field || null, oldValue: o.oldValue == null ? null : String(o.oldValue),
+  newValue: o.newValue == null ? null : String(o.newValue), reason: o.reason || "", brandId: o.brandId || null, projectId: o.projectId || null,
+});
+const pushAudit = (db, actorId, o) => ({ ...db, audit: [auditEntry(actorId, o), ...(db.audit || [])] });
 const mapTask = (db, id, fn) => ({ ...db, tasks: db.tasks.map((t) => (t.id === id ? fn(t) : t)) });
 const mapReq = (db, id, fn) => ({ ...db, requests: db.requests.map((r) => (r.id === id ? fn(r) : r)) });
 const pushNotif = (db, n) => ({ ...db, notifs: [{ id: uid("n"), at: Date.now(), read: false, level: "info", ...n }, ...db.notifs] });
@@ -2607,7 +2621,7 @@ function ProjectDetail({ id }) {
   const stuckReqCnt = db.requests.filter((r) => !r.deleted && r.projectId === id && ["pending", "info", "deadline_proposed"].includes(r.status)).length;
   const msCount = (p.milestones || []).length;
   const decCount = (p.decisions || []).length;
-  const tabs = [["overview", "Tổng quan"], ["milestones", `Milestone${msCount ? " · " + msCount : ""}`], ["tasks", "Công việc"], ["timeline", "Timeline"], ["members", "Thành viên"], ["issues", "Vấn đề"], ["decisions", `Quyết định${decCount ? " · " + decCount : ""}`]];
+  const tabs = [["overview", "Tổng quan"], ["milestones", `Milestone${msCount ? " · " + msCount : ""}`], ["tasks", "Công việc"], ["timeline", "Timeline"], ["members", "Thành viên"], ["issues", "Vấn đề"], ["decisions", `Quyết định${decCount ? " · " + decCount : ""}`], ["activity", "Nhật ký"]];
   return (
     <div>
       <button className={`${btnGhost} mb-2`} onClick={() => nav("projects")}><ChevronLeft className="h-3.5 w-3.5" />Dự án</button>
@@ -2675,6 +2689,7 @@ function ProjectDetail({ id }) {
       {tab === "issues" && <BlockersTab p={p} />}
       {tab === "milestones" && <MilestonesTab p={p} editable={editable} msP={msP} />}
       {tab === "decisions" && <DecisionsTab p={p} editable={editable} />}
+      {tab === "activity" && <AuditList entries={(db.audit || []).filter((a) => a.projectId === id)} emptyHint="Thay đổi milestone, blocker, thành viên, quyết định, deadline… sẽ ghi lại ở đây." />}
       {creating && <TaskForm defaults={{ projectId: id }} onClose={() => setCreating(false)} />}
     </div>
   );
@@ -3031,6 +3046,30 @@ function DependencyBlock({ t }) {
           {options.length === 0 && <p className="text-[12px] text-zinc-400">Dự án chưa có task khác.</p>}
         </div>
       )}
+    </div>
+  );
+}
+/* ===== Audit log viewer (append-only): ai · làm gì · trên đối tượng nào · khi nào ===== */
+const AUDIT_ENTITY_LABEL = { request: "Yêu cầu", project: "Dự án", milestone: "Milestone", decision: "Quyết định", project_member: "Thành viên", change_request: "Thay đổi DA", task: "Công việc", blocker: "Blocker" };
+function AuditList({ entries, emptyHint }) {
+  const { db } = useApp();
+  if (!entries.length) return <EmptyState icon={History} title="Chưa có nhật ký" hint={emptyHint || "Các thay đổi quan trọng sẽ được ghi lại ở đây."} />;
+  return (
+    <div className="divide-y divide-zinc-50 rounded-xl border border-zinc-100 bg-white">
+      {entries.slice(0, 200).map((a) => (
+        <div key={a.id} className="flex items-start gap-2.5 px-3 py-2">
+          <Avatar id={a.actorId} size={7} />
+          <div className="min-w-0 flex-1">
+            <p className="text-[12px] text-zinc-700"><b>{userById(db, a.actorId)?.name || "—"}</b> · {a.action}{a.entityLabel ? <> · <span className="text-zinc-500">{a.entityLabel}</span></> : null}</p>
+            {(a.oldValue || a.newValue) && <p className="truncate text-[11px] text-zinc-400">{a.oldValue ? `${a.oldValue} → ` : ""}{a.newValue}</p>}
+            {a.reason && <p className="truncate text-[11px] text-zinc-400">Lý do: {a.reason}</p>}
+          </div>
+          <div className="shrink-0 text-right">
+            <span className="text-[10px] text-zinc-400">{AUDIT_ENTITY_LABEL[a.entity] || a.entity}</span>
+            <p className="text-[10px] text-zinc-300">{fmtDT(a.at)}</p>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -3505,7 +3544,7 @@ function AdminPage() {
     <div>
       <h1 className="mb-4 text-lg font-semibold text-zinc-900">Quản trị</h1>
       <div className="mb-4 flex gap-1 border-b border-zinc-100">
-        {[["users", "Thành viên"], ["depts", "Phòng ban"], ["recurring", "Task định kỳ"], ["export", "Xuất dữ liệu"], ["trash", "Thùng rác"], ["rolelog", "Nhật ký phân quyền"], ["config", "Cấu hình"]].map(([k, lb]) => <button key={k} onClick={() => setTab(k)} className={`px-3 py-2 text-[13px] font-medium border-b-2 -mb-px ${tab === k ? "border-zinc-900 text-zinc-900" : "border-transparent text-zinc-400"}`}>{lb}</button>)}
+        {[["users", "Thành viên"], ["depts", "Phòng ban"], ["recurring", "Task định kỳ"], ["export", "Xuất dữ liệu"], ["trash", "Thùng rác"], ["audit", "Nhật ký hệ thống"], ["rolelog", "Nhật ký phân quyền"], ["config", "Cấu hình"]].map(([k, lb]) => <button key={k} onClick={() => setTab(k)} className={`px-3 py-2 text-[13px] font-medium border-b-2 -mb-px ${tab === k ? "border-zinc-900 text-zinc-900" : "border-transparent text-zinc-400"}`}>{lb}</button>)}
       </div>
       {tab === "users" && (
         <div className="space-y-3">
@@ -3617,6 +3656,12 @@ function AdminPage() {
           <Field label="Lý do khôi phục" req><textarea className={inputCls} rows={2} value={roleModal.reason} onChange={(e) => setRoleModal({ ...roleModal, reason: e.target.value })} /></Field>
           <div className="flex justify-end gap-2"><button className={btnSec} onClick={() => setRoleModal(null)}>Hủy</button><button className={btnPri} disabled={!roleModal.reason.trim()} onClick={() => { const r = act.restoreTask(roleModal.trashRestore, roleModal.reason.trim()); toast(r.ok ? "Đã khôi phục" : r.msg, r.ok ? "ok" : "err"); setRoleModal(null); }}>Khôi phục</button></div>
         </Modal>
+      )}
+      {tab === "audit" && (
+        <div>
+          <p className="mb-2 text-[12px] text-zinc-400">Nhật ký thao tác quan trọng toàn hệ thống — ai, làm gì, trên đối tượng nào, khi nào. Chỉ ghi thêm, không sửa/xóa.</p>
+          <AuditList entries={db.audit || []} emptyHint="Duyệt/đổi deadline, CEO override, đổi vai trò dự án, milestone, blocker, quyết định… sẽ ghi tại đây." />
+        </div>
       )}
       {tab === "rolelog" && (
         <div className="rounded-xl border border-zinc-100 bg-white divide-y divide-zinc-50">
@@ -4570,26 +4615,79 @@ export default function App() {
       const project = { id: pid, code: `PRJ-${String(prev.projects.length + 1).padStart(2, "0")}`, watcherIds: [], issues: [], milestones, decisions: [], members: [], changeRequests: [], forecastDeadline: null, status: "prep", desc: "", ...pf };
       return { ...prev, projects: [...prev.projects, project], tasks: [...newTasks, ...prev.tasks] };
     }),
-    updateProject: (id, patch) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === id ? { ...p, ...patch } : p) })),
+    updateProject: (id, patch) => {
+      const p0 = projById(db, id);
+      if (p0 && !canManageProject(db, me, p0)) { toast("Không có quyền sửa dự án này", "warn"); return; }
+      setDb((prev) => {
+        const cur = prev.projects.find((p) => p.id === id);
+        let db2 = { ...prev, projects: prev.projects.map((p) => p.id === id ? { ...p, ...patch } : p) };
+        const keys = Object.keys(patch).filter((k) => ["status", "ownerId", "managerId", "deadline", "forecastDeadline", "goal", "desc", "priority"].includes(k));
+        if (cur && keys.length) db2 = pushAudit(db2, meId, { action: "Cập nhật dự án", entity: "project", entityId: id, entityLabel: cur.name, field: keys.join(","), oldValue: keys.map((k) => cur[k]).join(" | "), newValue: keys.map((k) => patch[k]).join(" | "), brandId: cur.brandId, projectId: id });
+        return db2;
+      });
+    },
     /* ---- Milestone (dữ liệu nằm trên project.milestones, tự đồng bộ Supabase qua projectToRow) ---- */
-    addMilestone: (projectId, f) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, milestones: [...(p.milestones || []), { id: uid("ms"), name: f.name, desc: f.desc || "", ownerId: f.ownerId || null, approverId: f.approverId || null, plannedStart: f.plannedStart || null, plannedDeadline: f.plannedDeadline || null, actualCompletedAt: null, status: f.status || "NOT_STARTED", weight: f.weight || 1, expectedOutput: f.expectedOutput || "", acceptanceCriteria: f.acceptanceCriteria || "", relatedTaskIds: f.relatedTaskIds || [], createdAt: Date.now(), updatedAt: Date.now() }] } : p) })),
-    updateMilestone: (projectId, mid, patch) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, milestones: (p.milestones || []).map((m) => m.id === mid ? { ...m, ...patch, ...(patch.status === "COMPLETED" && !m.actualCompletedAt ? { actualCompletedAt: Date.now() } : {}), ...(patch.status && patch.status !== "COMPLETED" ? { actualCompletedAt: null } : {}), updatedAt: Date.now() } : m) } : p) })),
-    deleteMilestone: (projectId, mid) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, milestones: (p.milestones || []).filter((m) => m.id !== mid) } : p) })),
+    addMilestone: (projectId, f) => {
+      const p = projById(db, projectId);
+      if (!canManageProject(db, me, p)) { toast("Không có quyền quản lý dự án này", "warn"); return; }
+      setDb((prev) => pushAudit({ ...prev, projects: prev.projects.map((p2) => p2.id === projectId ? { ...p2, milestones: [...(p2.milestones || []), { id: uid("ms"), name: f.name, desc: f.desc || "", ownerId: f.ownerId || null, approverId: f.approverId || null, plannedStart: f.plannedStart || null, plannedDeadline: f.plannedDeadline || null, actualCompletedAt: null, status: f.status || "NOT_STARTED", weight: f.weight || 1, expectedOutput: f.expectedOutput || "", acceptanceCriteria: f.acceptanceCriteria || "", relatedTaskIds: f.relatedTaskIds || [], createdAt: Date.now(), updatedAt: Date.now() }] } : p2) }, meId, { action: "Thêm milestone", entity: "milestone", entityId: projectId, entityLabel: f.name, projectId, brandId: p?.brandId }));
+    },
+    updateMilestone: (projectId, mid, patch) => {
+      const p = projById(db, projectId);
+      const m0 = (p?.milestones || []).find((m) => m.id === mid);
+      const canApprove = memberCan(p, me.id, "canApproveMilestone");
+      if (!canManageProject(db, me, p) && !(patch.status && canApprove)) { toast("Không có quyền cập nhật milestone", "warn"); return; }
+      setDb((prev) => { let db2 = { ...prev, projects: prev.projects.map((p2) => p2.id === projectId ? { ...p2, milestones: (p2.milestones || []).map((m) => m.id === mid ? { ...m, ...patch, ...(patch.status === "COMPLETED" && !m.actualCompletedAt ? { actualCompletedAt: Date.now() } : {}), ...(patch.status && patch.status !== "COMPLETED" ? { actualCompletedAt: null } : {}), updatedAt: Date.now() } : m) } : p2) };
+        if (patch.status && m0) db2 = pushAudit(db2, meId, { action: "Đổi trạng thái milestone", entity: "milestone", entityId: mid, entityLabel: m0.name, field: "status", oldValue: m0.status, newValue: patch.status, projectId, brandId: p?.brandId });
+        return db2; });
+    },
+    deleteMilestone: (projectId, mid) => {
+      const p = projById(db, projectId);
+      if (!canManageProject(db, me, p)) { toast("Không có quyền xóa milestone", "warn"); return; }
+      const m0 = (p?.milestones || []).find((m) => m.id === mid);
+      setDb((prev) => pushAudit({ ...prev, projects: prev.projects.map((p2) => p2.id === projectId ? { ...p2, milestones: (p2.milestones || []).filter((m) => m.id !== mid) } : p2) }, meId, { action: "Xóa milestone", entity: "milestone", entityId: mid, entityLabel: m0?.name || "", projectId, brandId: p?.brandId }));
+    },
     /* ---- Decision Log (append-only; đổi quyết định cũ = tạo mới + supersedesId) ---- */
-    addDecision: (projectId, f) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, decisions: [{ id: uid("dec"), title: f.title, decision: f.decision, decidedById: f.decidedById || me.id, decidedAt: Date.now(), reason: f.reason || "", impact: f.impact || "", supersedesId: f.supersedesId || null, relatedTaskIds: f.relatedTaskIds || [] }, ...(p.decisions || [])] } : p) })),
+    addDecision: (projectId, f) => {
+      const p = projById(db, projectId);
+      if (!canManageProject(db, me, p)) { toast("Không có quyền ghi quyết định dự án này", "warn"); return; }
+      setDb((prev) => pushAudit({ ...prev, projects: prev.projects.map((p2) => p2.id === projectId ? { ...p2, decisions: [{ id: uid("dec"), title: f.title, decision: f.decision, decidedById: f.decidedById || meId, decidedAt: Date.now(), reason: f.reason || "", impact: f.impact || "", supersedesId: f.supersedesId || null, relatedTaskIds: f.relatedTaskIds || [] }, ...(p2.decisions || [])] } : p2) }, meId, { action: "Ghi quyết định", entity: "decision", entityId: projectId, entityLabel: f.title, reason: f.reason || "", projectId, brandId: p?.brandId }));
+    },
     /* ---- Thành viên dự án (vai trò + quyền chi tiết) ---- */
-    addProjectMember: (projectId, m) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, members: [...(p.members || []).filter((x) => x.userId !== m.userId), { userId: m.userId, departmentId: userById(prev, m.userId)?.deptId || null, projectRole: m.projectRole || "MEMBER", perms: { ...PROJECT_ROLES[m.projectRole || "MEMBER"].perms }, joinedAt: Date.now(), leftAt: null }] } : p) })),
-    updateProjectMember: (projectId, userId, patch) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, members: (p.members || []).map((x) => x.userId === userId ? { ...x, ...patch, ...(patch.projectRole ? { perms: { ...PROJECT_ROLES[patch.projectRole].perms } } : {}) } : x) } : p) })),
-    removeProjectMember: (projectId, userId) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, members: (p.members || []).filter((x) => x.userId !== userId) } : p) })),
+    addProjectMember: (projectId, m) => {
+      const p = projById(db, projectId);
+      if (!canManageProject(db, me, p)) { toast("Không có quyền quản lý thành viên dự án", "warn"); return; }
+      setDb((prev) => pushAudit({ ...prev, projects: prev.projects.map((p2) => p2.id === projectId ? { ...p2, members: [...(p2.members || []).filter((x) => x.userId !== m.userId), { userId: m.userId, departmentId: userById(prev, m.userId)?.deptId || null, projectRole: m.projectRole || "MEMBER", perms: { ...PROJECT_ROLES[m.projectRole || "MEMBER"].perms }, joinedAt: Date.now(), leftAt: null }] } : p2) }, meId, { action: "Thêm thành viên dự án", entity: "project_member", entityId: m.userId, entityLabel: userById(db, m.userId)?.name || "", newValue: PROJECT_ROLES[m.projectRole || "MEMBER"].label, projectId, brandId: p?.brandId }));
+    },
+    updateProjectMember: (projectId, userId, patch) => {
+      const p = projById(db, projectId);
+      if (!canManageProject(db, me, p)) { toast("Không có quyền đổi vai trò thành viên", "warn"); return; }
+      setDb((prev) => pushAudit({ ...prev, projects: prev.projects.map((p2) => p2.id === projectId ? { ...p2, members: (p2.members || []).map((x) => x.userId === userId ? { ...x, ...patch, ...(patch.projectRole ? { perms: { ...PROJECT_ROLES[patch.projectRole].perms } } : {}) } : x) } : p2) }, meId, { action: "Đổi vai trò thành viên", entity: "project_member", entityId: userId, entityLabel: userById(db, userId)?.name || "", newValue: patch.projectRole ? PROJECT_ROLES[patch.projectRole]?.label : "", projectId, brandId: p?.brandId }));
+    },
+    removeProjectMember: (projectId, userId) => {
+      const p = projById(db, projectId);
+      if (!canManageProject(db, me, p)) { toast("Không có quyền gỡ thành viên", "warn"); return; }
+      setDb((prev) => pushAudit({ ...prev, projects: prev.projects.map((p2) => p2.id === projectId ? { ...p2, members: (p2.members || []).filter((x) => x.userId !== userId) } : p2) }, meId, { action: "Gỡ thành viên dự án", entity: "project_member", entityId: userId, entityLabel: userById(db, userId)?.name || "", projectId, brandId: p?.brandId }));
+    },
     /* ---- Phụ thuộc công việc (chỉ cảnh báo, không tự đổi deadline) ---- */
-    setTaskDeps: (taskId, ids) => setDb((prev) => ({ ...prev, tasks: prev.tasks.map((t) => t.id === taskId ? withLog({ ...t, dependsOnTaskIds: ids }, meId, "cập nhật phụ thuộc công việc") : t) })),
+    setTaskDeps: (taskId, ids) => {
+      const t = db.tasks.find((x) => x.id === taskId);
+      if (!t) return;
+      const p = t.projectId ? projById(db, t.projectId) : null;
+      if (!canManage(db, me, t) && !canManageProject(db, me, p)) { toast("Không có quyền sửa phụ thuộc công việc này", "warn"); return; }
+      setDb((prev) => pushAudit({ ...prev, tasks: prev.tasks.map((x) => x.id === taskId ? withLog({ ...x, dependsOnTaskIds: ids }, meId, "cập nhật phụ thuộc công việc") : x) }, meId, { action: "Cập nhật phụ thuộc", entity: "task", entityId: taskId, entityLabel: t.name, newValue: `${ids.length} việc`, projectId: t.projectId, brandId: t.brandId }));
+    },
     /* ---- Project Change Request (thay đổi lớn → CEO duyệt → ghi Decision Log) ---- */
-    createProjectChangeRequest: (projectId, f) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, changeRequests: [{ id: uid("pcr"), changeType: f.changeType, currentValue: f.currentValue || "", proposedValue: f.proposedValue || "", reason: f.reason || "", impact: f.impact || "", requestedByUserId: meId, approverId: prev.users.find((u) => u.role === "ceo")?.id || null, status: "pending", createdAt: Date.now(), resolvedAt: null }, ...(p.changeRequests || [])] } : p) })),
+    createProjectChangeRequest: (projectId, f) => {
+      const p = projById(db, projectId);
+      if (!(projectMember(p, me.id) || canManageProject(db, me, p))) { toast("Chỉ thành viên dự án mới đề xuất thay đổi", "warn"); return; }
+      setDb((prev) => pushAudit({ ...prev, projects: prev.projects.map((p2) => p2.id === projectId ? { ...p2, changeRequests: [{ id: uid("pcr"), changeType: f.changeType, currentValue: f.currentValue || "", proposedValue: f.proposedValue || "", reason: f.reason || "", impact: f.impact || "", requestedByUserId: meId, approverId: prev.users.find((u) => u.role === "ceo")?.id || null, status: "pending", createdAt: Date.now(), resolvedAt: null }, ...(p2.changeRequests || [])] } : p2) }, meId, { action: "Đề xuất thay đổi dự án", entity: "change_request", entityId: projectId, entityLabel: PROJECT_CHANGE_TYPES[f.changeType], field: f.changeType, oldValue: f.currentValue, newValue: f.proposedValue, reason: f.reason, projectId, brandId: p?.brandId }));
+    },
     resolveProjectChange: (projectId, crId, decision) => setDb((prev) => {
       const p0 = prev.projects.find((p) => p.id === projectId); if (!p0) return prev;
       const cr = (p0.changeRequests || []).find((c) => c.id === crId); if (!cr || cr.status !== "pending") return prev;
       if (me.role !== "ceo" && !isMgr(me)) { toast("Chỉ CEO/Admin duyệt thay đổi lớn", "warn"); return prev; }
-      return { ...prev, projects: prev.projects.map((p) => {
+      const db2 = { ...prev, projects: prev.projects.map((p) => {
         if (p.id !== projectId) return p;
         let np = { ...p, changeRequests: p.changeRequests.map((c) => c.id === crId ? { ...c, status: decision, resolvedAt: Date.now(), resolvedBy: meId } : c) };
         if (decision === "approved") {
@@ -4599,6 +4697,7 @@ export default function App() {
         }
         return np;
       }) };
+      return pushAudit(db2, meId, { action: decision === "approved" ? "Duyệt thay đổi dự án" : "Từ chối thay đổi dự án", entity: "change_request", entityId: crId, entityLabel: PROJECT_CHANGE_TYPES[cr.changeType], field: cr.changeType, oldValue: cr.currentValue, newValue: decision === "approved" ? cr.proposedValue : "", reason: cr.reason, projectId, brandId: p0.brandId });
     }),
     createRequest: (f) => setDb((prev) => {
       const r = { id: uid("r"), code: nextReqCode(prev), deadlineProposals: [], pendingHandlerId: null, reqType: f.reqType || null, ...f, isConfidential: !!f.isConfidential, allowedViewerIds: f.allowedViewerIds || [], brandId: f.brandId || deptBrand(prev, me.deptId) || deptBrand(prev, f.toDeptId) || null, fromDeptId: me.deptId, fromUserId: meId, receiverId: null, handlerId: null, agreedDeadline: null, status: "pending", rejectReason: "", attachments: [], comments: [], logs: [{ id: uid("l"), userId: meId, at: Date.now(), text: "tạo yêu cầu phối hợp" }], taskId: null, createdAt: Date.now() };
@@ -4730,6 +4829,8 @@ export default function App() {
         if (r.taskId) next = { ...next, tasks: next.tasks.map((t) => t.id === r.taskId ? withLog({ ...t, deadline: payload.deadline, deadlineHistory: [...t.deadlineHistory, { from: old, to: payload.deadline, by: meId, at: Date.now(), reason: `CEO override: ${payload.reason || ""}` }] }, meId, `CEO điều chỉnh deadline trực tiếp qua yêu cầu ${r.code}`, { action: "deadline" }) : t) };
         [r.fromUserId, r.handlerId, r.receiverId, deptLeader(prev, r.fromDeptId)?.id, deptLeader(prev, r.toDeptId)?.id].filter(Boolean).forEach((u2) => { next = notify(next, u2, `CEO điều chỉnh deadline trực tiếp: ${r.title} → ${fmtDFull(payload.deadline)}`, { requestId: id }, "urgent"); });
       }
+      const AUDIT_REQ = { accept: "Tiếp nhận yêu cầu", reject: "Từ chối yêu cầu", cancel: "Hủy yêu cầu", deliver: "Bàn giao yêu cầu", revise: "Yêu cầu chỉnh sửa", confirm: "Nghiệm thu yêu cầu", assignHandler: "Đổi người xử lý", proposeDeadlineChange: "Đề xuất đổi deadline", approveDeadlineChange: "Duyệt đổi deadline", rejectDeadlineChange: "Từ chối đổi deadline", ceoOverride: "CEO điều chỉnh deadline trực tiếp" };
+      if (AUDIT_REQ[action] && next !== prev) next = pushAudit(next, meId, { action: AUDIT_REQ[action], entity: "request", entityId: id, entityLabel: r.title, reason: payload.reason || payload.note || (action === "ceoOverride" ? `${fmtDFull(r.agreedDeadline)} → ${fmtDFull(payload.deadline)}` : ""), brandId: r.brandId, projectId: r.projectId });
       return next;
     }),
     reqComment: (id, text) => setDb((prev) => mapReq(prev, id, (r) => ({ ...r, comments: [...r.comments, { id: uid("cm"), userId: meId, text, at: Date.now() }] }))),
@@ -4817,11 +4918,11 @@ export default function App() {
       setDb((prev) => ({ ...prev, hrProcesses: prev.hrProcesses.map((x) => x.id === id ? { ...x, status: "closed", closedAt: Date.now(), closeNote: force ? `Đóng cưỡng bức bởi ${me.name}: ${reason}` : "Đóng đủ điều kiện" } : x) }));
       return { ok: true };
     },
-    addBlocker: (projectId, f) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, issues: [...p.issues, { id: uid("i"), title: f.title, desc: f.desc || "", severity: f.severity, ownerId: f.ownerId, deptId: f.deptId || null, dueDate: f.dueDate, nextAction: f.nextAction || "", status: "OPEN", relatedTaskId: f.relatedTaskId || null, escalation: 0, createdAt: Date.now(), resolvedAt: null, resolutionNote: "" }] } : p) })),
+    addBlocker: (projectId, f) => setDb((prev) => { const pj = prev.projects.find((p) => p.id === projectId); return pushAudit({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, issues: [...p.issues, { id: uid("i"), title: f.title, desc: f.desc || "", severity: f.severity, ownerId: f.ownerId, deptId: f.deptId || null, dueDate: f.dueDate, nextAction: f.nextAction || "", status: "OPEN", relatedTaskId: f.relatedTaskId || null, escalation: 0, createdAt: Date.now(), resolvedAt: null, resolutionNote: "" }] } : p) }, meId, { action: "Tạo blocker", entity: "blocker", entityId: projectId, entityLabel: f.title, newValue: (f.severity || "").toUpperCase(), projectId, brandId: pj?.brandId }); }),
     updateBlocker: (projectId, bid, patch) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, issues: p.issues.map((i) => i.id === bid ? { ...i, ...patch } : i) } : p) })),
     resolveBlocker: (projectId, bid, note) => {
       if (!note?.trim()) return { ok: false, msg: "Không đóng blocker khi chưa có ghi chú cách xử lý" };
-      setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, issues: p.issues.map((i) => i.id === bid ? { ...i, status: "RESOLVED", resolvedAt: Date.now(), resolutionNote: note.trim() } : i) } : p) }));
+      setDb((prev) => { const pj = prev.projects.find((p) => p.id === projectId); const bk = pj?.issues.find((i) => i.id === bid); return pushAudit({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, issues: p.issues.map((i) => i.id === bid ? { ...i, status: "RESOLVED", resolvedAt: Date.now(), resolutionNote: note.trim() } : i) } : p) }, meId, { action: "Đóng blocker", entity: "blocker", entityId: bid, entityLabel: bk?.title || "", reason: note.trim(), projectId, brandId: pj?.brandId }); });
       return { ok: true };
     },
     recurringToggle: (id, paused) => setDb((prev) => ({ ...prev, recurrings: prev.recurrings.map((r) => r.id === id ? { ...r, paused } : r) })),
@@ -4939,7 +5040,7 @@ export default function App() {
 }
 
 /* Export nội bộ phục vụ unit test (không dùng trong UI) */
-export const __internals = { buildSeed, perms, runScheduler, runAlerts, occursToday, canManage, canCreateTaskFor, canApplyTaskPatch, assignableUsers, canViewProject, canViewRequest, canViewDoc, deptReceiverId, isReceiverFor, userById, deptById, getEligibleApprovers, isSenderAuthorized, APPROVER_RULES, TASK_FIELD_PERM, TASK_FIELD_FORBIDDEN, computeProjectHealth, milestoneProgress, weightedTaskProgress, msOverdue, msDueSoon, projBrand, computeRequestSla, escalationLevel, SLA_HOURS, projectMember, memberCan, taskDepStatus, PROJECT_ROLES, PROJECT_TEMPLATES };
+export const __internals = { buildSeed, perms, runScheduler, runAlerts, occursToday, canManage, canCreateTaskFor, canApplyTaskPatch, assignableUsers, canViewProject, canViewRequest, canViewDoc, deptReceiverId, isReceiverFor, userById, deptById, getEligibleApprovers, isSenderAuthorized, APPROVER_RULES, TASK_FIELD_PERM, TASK_FIELD_FORBIDDEN, computeProjectHealth, milestoneProgress, weightedTaskProgress, msOverdue, msDueSoon, projBrand, computeRequestSla, escalationLevel, SLA_HOURS, projectMember, memberCan, taskDepStatus, PROJECT_ROLES, PROJECT_TEMPLATES, canManageProject, auditEntry, pushAudit };
 /* ============================================================
    HR WORKSPACE — quy trình nhân sự dựa trên task
    Phạm vi: onboarding, thử việc, đào tạo, hồ sơ, offboarding,
