@@ -549,6 +549,18 @@ function buildSeed() {
       prj.members = [M("minh", "PROJECT_OWNER"), M("mai", "PROJECT_MANAGER"), M("dat", "DEPARTMENT_LEAD"), M("thao", "MEMBER"), M("lan", "DEPARTMENT_LEAD"), M("ceo", "APPROVER")];
     }
   }
+  /* Các dự án còn lại: tự điền thành viên từ owner + watchers + leader các phòng
+     tham gia (để quyền xem member-based không làm mất dự án trong demo). */
+  SEED_PROJECTS.forEach((p) => {
+    if ((p.members || []).length) return;
+    const M = (userId, projectRole) => ({ userId, departmentId: SEED_USERS.find((u) => u.id === userId)?.deptId || null, projectRole, perms: { ...PROJECT_ROLES[projectRole].perms }, joinedAt: Date.now() - 12 * DAY, leftAt: null });
+    const seen = new Set();
+    const add = (uid2, role) => { if (uid2 && !seen.has(uid2)) { seen.add(uid2); return M(uid2, role); } return null; };
+    const rows = [add(p.ownerId, "PROJECT_OWNER")];
+    (p.watcherIds || []).forEach((w) => rows.push(add(w, w === "ceo" ? "APPROVER" : "WATCHER")));
+    (p.deptIds || []).forEach((dId) => rows.push(add(SEED_DEPTS.find((d) => d.id === dId)?.leaderId, "DEPARTMENT_LEAD")));
+    p.members = rows.filter(Boolean);
+  });
   /* Seed milestone + decision cho 2 dự án launch để demo có dữ liệu thật */
   const MS = (over) => ({ id: uid("ms"), name: "", desc: "", ownerId: null, approverId: null, plannedStart: null, plannedDeadline: null, actualCompletedAt: null, status: "NOT_STARTED", weight: 1, expectedOutput: "", acceptanceCriteria: "", relatedTaskIds: [], createdAt: Date.now() - 10 * DAY, updatedAt: Date.now() - 2 * DAY, ...over });
   const prj1 = SEED_PROJECTS.find((p) => p.id === "prj1");
@@ -649,6 +661,9 @@ const deptLeader = (db, deptId) => { const d = deptById(db, deptId); return d?.l
    ============================================================ */
 const involved = (me, t) => [t.ownerId, t.creatorId, t.assignerId, t.approverId, ...(t.collaboratorIds || []), ...(t.allowedViewerIds || [])].includes(me.id);
 const isMgr = (u) => !!u && (u.role === "admin" || u.role === "ceo");
+/* Quyết định BUSINESS chỉ CEO (không phải system admin): duyệt Change Request,
+   CEO override deadline, đổi Owner/Manager/Goal/Scope/Budget/Deadline tổng. */
+const isCeo = (u) => !!u && u.role === "ceo";
 const isHrLeader = (db, u) => !!u && deptById(db, "hr")?.leaderId === u.id;
 const isDeptLeader = (db, u, deptId) => {
   if (!u || u.role !== "leader") return false;
@@ -658,11 +673,20 @@ const isDeptLeader = (db, u, deptId) => {
   return !!(d && d.parentDeptId) && u.deptId === d.parentDeptId;
 };
 const isProjOwner = (db, u, t) => !!t.projectId && projById(db, t.projectId)?.ownerId === u.id;
-const inProject = (db, u, projectId) => { const p = projById(db, projectId); return !!p && (p.ownerId === u.id || (p.watcherIds || []).includes(u.id) || p.deptIds.includes(u.deptId)); };
-/* quyền quản lý task = leader phòng sở hữu / project owner / admin / ceo */
-const canManage = (db, u, t) => isMgr(u) || isDeptLeader(db, u, t.deptId) || isProjOwner(db, u, t);
+/* "Thuộc dự án" = member-based (owner / PM / watcher / thành viên trong project_members).
+   KHÔNG mặc định cho toàn bộ nhân sự chỉ vì deptId thuộc dự án. */
+const isProjectMemberOf = (db, u, p) => !!u && !!p && (p.ownerId === u.id || p.managerId === u.id || (p.watcherIds || []).includes(u.id) || !!projectMember(p, u.id));
+const inProject = (db, u, projectId) => isProjectMemberOf(db, u, projById(db, projectId));
 /* quyền quản lý DỰ ÁN = admin/ceo · owner · PM · thành viên có quyền quản lý task */
 const canManageProject = (db, u, p) => !!u && !!p && (isMgr(u) || p.ownerId === u.id || p.managerId === u.id || memberCan(p, u.id, "canManageTask"));
+/* quyền quản lý task = admin/ceo · leader phòng sở hữu · (task dự án) người quản lý dự án */
+const canManage = (db, u, t) => isMgr(u) || isDeptLeader(db, u, t.deptId) || (!!t.projectId && canManageProject(db, u, projById(db, t.projectId)));
+/* Yêu cầu phối hợp đang mở, liên kết task này, ĐÃ chốt deadline 2 bên → deadline
+   task bị khóa, chỉ đổi qua luồng đổi deadline của Yêu cầu (hoặc CEO override). */
+const linkedAgreedRequest = (db, t) => (db.requests || []).find((r) => r.taskId === t.id && r.agreedDeadline && !["confirmed", "rejected", "cancelled"].includes(r.status)) || null;
+/* Điều kiện đủ để bàn giao/gửi duyệt: có tóm tắt + (link hoặc file). Dùng chung
+   cho submit task, bàn giao Yêu cầu, và UI — không nhân bản business logic (P1). */
+const taskActualReady = (t) => !!(t && t.actual && t.actual.summary && t.actual.summary.trim() && ((t.actual.links?.length || 0) > 0 || (t.attachments?.length || 0) > 0 || t.type === "personal"));
 
 /* ---- Quyền xem dữ liệu BẢO MẬT — tách riêng, KHÔNG cấp mặc định cho system admin ----
    Hồ sơ nhân sự (task mật thuộc phòng HR): chỉ người liên quan, Leader HR,
@@ -698,7 +722,13 @@ const perms = {
   changeStatus(db, u, t) { return !t.locked && !t.deleted && (t.ownerId === u.id || canManage(db, u, t)); },
   changeAssignee(db, u, t) { return !t.deleted && (canManage(db, u, t) || (t.type === "personal" && t.creatorId === u.id)); },
   changeApprover(db, u, t) { return !t.deleted && canManage(db, u, t); },
-  changeDeadline(db, u, t) { return !t.locked && !t.deleted && (canManage(db, u, t) || (t.ownerId === u.id && !t.deadlineConfirmed)); },
+  changeDeadline(db, u, t) {
+    if (t.locked || t.deleted) return false;
+    /* Task liên kết Yêu cầu phối hợp đã chốt deadline (agreedDeadline): KHÔNG đổi
+       trực tiếp từ Task — phải qua "Đề xuất đổi deadline" của Yêu cầu (P0.1). */
+    if (linkedAgreedRequest(db, t)) return false;
+    return canManage(db, u, t) || (t.ownerId === u.id && !t.deadlineConfirmed);
+  },
   deleteTask(db, u, t) { return !t.deleted && (canManage(db, u, t) || (t.type === "personal" && t.creatorId === u.id)); },
   restoreTask(db, u, t) { return !!t.deleted && canManage(db, u, t); },
   submitForApproval(db, u, t) { return !t.locked && t.ownerId === u.id; },
@@ -756,11 +786,13 @@ const canApplyTaskPatch = (db, u, t, patch) => {
 const canCreateTaskFor = (db, u, f) => {
   if (isMgr(u)) return { ok: true };
   const p = f.projectId ? projById(db, f.projectId) : null;
-  /* Gắn task vào dự án: phải thuộc phạm vi dự án (owner / phòng nằm trong dự án) — không cho gắn tùy tiện */
+  /* Task thuộc DỰ ÁN: enforce quyền vai trò dự án — KHÔNG cho tạo chỉ vì cùng phòng.
+     Cần quản lý dự án (owner/PM/admin/ceo) hoặc thành viên có canCreateTask. */
   if (p) {
-    if (!canViewProject(db, u, p)) return { ok: false, msg: "Bạn không thuộc phạm vi dự án này" };
-    if (p.ownerId === u.id) return p.deptIds.includes(f.deptId) ? { ok: true } : { ok: false, msg: "Phòng ban nằm ngoài phạm vi dự án" };
-    if (!p.deptIds.includes(f.deptId)) return { ok: false, msg: "Phòng ban nằm ngoài phạm vi dự án" };
+    if (!canViewProject(db, u, p)) return { ok: false, msg: "Bạn không thuộc dự án này" };
+    if (!(canManageProject(db, u, p) || memberCan(p, u.id, "canCreateTask"))) return { ok: false, msg: "Bạn không có quyền tạo task trong dự án này (cần vai trò dự án phù hợp)." };
+    if (f.deptId && !p.deptIds.includes(f.deptId)) return { ok: false, msg: "Phòng ban nằm ngoài phạm vi dự án" };
+    return { ok: true };
   }
   if (u.role === "leader") {
     if (f.deptId !== u.deptId) return { ok: false, msg: "Leader chỉ tạo task trong phòng mình. Việc cần phòng khác → dùng Yêu cầu phối hợp." };
@@ -829,7 +861,9 @@ const assignableUsers = (db, u, { deptId, projectId } = {}) => {
 };
 
 /* ---- policy xem các entity khác (dùng cho Global Search + trang danh sách) ---- */
-const canViewProject = (db, u, p) => !p.deleted && (isMgr(u) || p.ownerId === u.id || (p.watcherIds || []).includes(u.id) || p.deptIds.includes(u.deptId));
+/* Xem dự án: member-based — CEO/Admin, Owner, PM, watcher, thành viên trong
+   project_members. Không mở cho cả phòng chỉ vì deptId thuộc dự án (P0.2). */
+const canViewProject = (db, u, p) => !p.deleted && (isMgr(u) || isProjectMemberOf(db, u, p));
 /* Quyền xem request — theo visibility field */
 const canViewRequest = (db, u, r) => {
   if (r.deleted) return isMgr(u);
@@ -1159,7 +1193,7 @@ function Toasts({ toasts }) {
    Task drawer
    ============================================================ */
 function TaskDrawer({ taskId, onClose }) {
-  const { db, me, act, toast, nav } = useApp();
+  const { db, me, act, toast, nav, openRequest } = useApp();
   const t = db.tasks.find((x) => x.id === taskId);
   const [tab, setTab] = useState("activity");
   const [editing, setEditing] = useState(false);
@@ -1189,6 +1223,7 @@ function TaskDrawer({ taskId, onClose }) {
   const canOwner = perms.changeAssignee(db, me, t);
   const canApproverSel = perms.changeApprover(db, me, t);
   const canDl = perms.changeDeadline(db, me, t);
+  const lockedReq = linkedAgreedRequest(db, t);
   const canProgress = perms.updateProgress(db, me, t);
   const canCkManage = perms.manageChecklist(db, me, t);
   const canCkToggle = perms.toggleChecklist(db, me, t);
@@ -1317,9 +1352,12 @@ function TaskDrawer({ taskId, onClose }) {
             </Row>
             <Row label="Bắt đầu"><input type="date" className={miniSel} value={t.start || ""} disabled={!editable} onChange={(e) => act.updateTask(t.id, { start: e.target.value }, "đổi ngày bắt đầu")} /></Row>
             <Row label="Deadline">
-              <div className="flex items-center gap-2">
-                <input type="date" className={miniSel} value={t.deadline || ""} disabled={!canDl} onChange={(e) => onDeadline(e.target.value)} />
-                <span className={`text-xs whitespace-nowrap ${deadlineMeta(t).cls}`}>{deadlineMeta(t).label}</span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <input type="date" className={miniSel} value={t.deadline || ""} disabled={!canDl} onChange={(e) => onDeadline(e.target.value)} />
+                  <span className={`text-xs whitespace-nowrap ${deadlineMeta(t).cls}`}>{deadlineMeta(t).label}</span>
+                </div>
+                {lockedReq && <p className="mt-1 text-[11px] text-amber-600">Deadline đã chốt qua Yêu cầu <button className="underline" onClick={() => { onClose(); openRequest(lockedReq.id); }}>{lockedReq.code}</button> — đổi trong Yêu cầu (Đề xuất đổi deadline).</p>}
               </div>
             </Row>
             <Row label="Khối lượng">
@@ -1599,7 +1637,7 @@ function ActualOutputBox({ t }) {
   const canEdit = !t.locked && (t.ownerId === me.id || canManage(db, me, t));
   const [link, setLink] = useState("");
   const a = t.actual || { summary: "", links: [], note: "", submittedAt: null };
-  const filled = a.summary?.trim() && (a.links.length > 0 || t.attachments.length > 0 || t.type === "personal");
+  const filled = taskActualReady(t);
   const needsApprovalHint = !!t.approverId;
   return (
     <div className={`mb-4 rounded-xl border p-3 ${filled ? "border-emerald-100 bg-emerald-50/40" : "border-zinc-200 bg-zinc-50/60"}`}>
@@ -1658,7 +1696,9 @@ function CommentBox({ taskId, confidential }) {
     const m = v.match(/@([\p{L}\s]{0,20})$/u);
     setQ(m ? m[1].trim().toLowerCase() : null);
   };
-  const candidates = q === null ? [] : db.users.filter((u) => u.id !== me.id && u.name.toLowerCase().includes(q)).slice(0, 5);
+  const task = db.tasks.find((x) => x.id === taskId);
+  /* Chỉ nhắc người CÓ QUYỀN XEM task này (không để mention làm lộ task cho người ngoài) */
+  const candidates = q === null ? [] : db.users.filter((u) => u.id !== me.id && u.name.toLowerCase().includes(q) && (!task || perms.view(db, u, task))).slice(0, 5);
   const pick = (u) => {
     setText(text.replace(/@([\p{L}\s]{0,20})$/u, `@${u.name} `));
     if (!mentions.find((m) => m.id === u.id)) setMentions([...mentions, { id: u.id, name: u.name }]);
@@ -2623,7 +2663,7 @@ function ProjectDetail({ id }) {
   const done = pts.filter((t) => t.status === "done").length;
   const pct = totalW ? Math.round((doneW / totalW) * 100) : 0;
   const members = [...new Set(pts.flatMap((t) => [t.ownerId, ...(t.collaboratorIds || [])]).filter(Boolean))];
-  const editable = ["admin", "ceo"].includes(me.role) || p.ownerId === me.id;
+  const editable = canManageProject(db, me, p);
   const canAddTask = canCreateTaskFor(db, me, { deptId: me.deptId, projectId: id, ownerId: me.id }).ok;
   const health = computeProjectHealth(db, p);
   const msP = milestoneProgress(p);
@@ -2736,7 +2776,7 @@ function BlockersTab({ p }) {
   const [f, setF] = useState({ title: "", severity: "medium", ownerId: p.ownerId, deptId: p.deptIds[0], dueDate: D(3), nextAction: "", relatedTaskId: "" });
   const open = p.issues.filter((i) => i.status !== "RESOLVED");
   const done = p.issues.filter((i) => i.status === "RESOLVED");
-  const canEdit = ["admin", "ceo"].includes(me.role) || p.ownerId === me.id || (me.role === "leader" && p.deptIds.includes(me.deptId));
+  const canEdit = canManageProject(db, me, p) || memberCan(p, me.id, "canManageBlocker");
   return (
     <div>
       {open.length === 0 && <EmptyState icon={AlertTriangle} title="Không có blocker đang mở" hint="Ghi nhận điểm vướng kèm người xử lý & hạn để cả nhóm và CEO nhìn thấy." />}
@@ -2982,7 +3022,7 @@ function ChangeRequestPanel({ p, editable }) {
   const [f, setF] = useState(blank);
   const crs = p.changeRequests || [];
   const pending = crs.filter((c) => c.status === "pending");
-  const canApprove = me.role === "ceo" || isMgr(me);
+  const canApprove = isCeo(me);
   const curOf = (ct) => ({ objective: p.goal, scope: p.desc, deadline: p.deadline, owner: userById(db, p.ownerId)?.name, manager: userById(db, p.managerId)?.name, budget: p.budgetReference }[ct] || "");
   const isUser = f.changeType === "owner" || f.changeType === "manager";
   const isDate = f.changeType === "deadline";
@@ -3039,7 +3079,7 @@ function DependencyBlock({ t }) {
   if (!t.projectId) return null;
   const proj = projById(db, t.projectId);
   const dep = taskDepStatus(db, t);
-  const canEdit = ["admin", "ceo"].includes(me.role) || memberCan(proj, me.id, "canManageTask") || (proj && proj.ownerId === me.id);
+  const canEdit = canManage(db, me, t) || canManageProject(db, me, proj);
   const options = db.tasks.filter((x) => x.projectId === t.projectId && x.id !== t.id && !x.deleted);
   const cur = t.dependsOnTaskIds || [];
   return (
@@ -3312,10 +3352,7 @@ function RequestDrawer({ reqId, onClose }) {
               {r.status === "accepted" && <button className={btnSec} onClick={() => { act.reqAction(r.id, "start"); toast("Đã chuyển sang Đang xử lý"); }}>Bắt đầu xử lý</button>}
               <button className={btnPri} onClick={() => {
                 const linked = r.taskId ? db.tasks.find((t) => t.id === r.taskId) : null;
-                if (linked) {
-                  const hasActual = linked.actual?.summary?.trim() && (linked.actual.links?.length > 0 || linked.attachments?.length > 0);
-                  if (!hasActual) { toast("Cần Kết quả thực tế đầy đủ (tóm tắt + link/file) trong task trước khi bàn giao", "warn"); return; }
-                }
+                if (linked && !taskActualReady(linked)) { toast("Cần Kết quả thực tế đầy đủ (tóm tắt + link/file) trong task trước khi bàn giao", "warn"); return; }
                 act.reqAction(r.id, "deliver"); toast("Đã bàn giao — chờ bên gửi xác nhận");
               }}>Bàn giao kết quả</button>
             </div>
@@ -4410,7 +4447,7 @@ export default function App() {
       if (!t) return { ok: false, msg: "Không tìm thấy công việc" };
       if (s === t.status) return { ok: true };
       if (!perms.changeStatus(db, me, t)) return { ok: false, msg: t.locked ? "Task đã khóa sau duyệt — chỉ Leader/Admin mở lại được" : "Bạn không có quyền đổi trạng thái task này" };
-      const hasActual = t.actual?.summary?.trim() && (t.actual.links.length > 0 || t.attachments.length > 0 || t.type === "personal");
+      const hasActual = taskActualReady(t);
       if (s === "review") {
         if (!t.approverId) return { ok: false, msg: "Task không có người duyệt — đặt người duyệt trước hoặc hoàn thành trực tiếp" };
         if (t.ownerId !== me.id) return { ok: false, msg: "Chỉ người phụ trách chính được gửi duyệt" };
@@ -4440,6 +4477,8 @@ export default function App() {
     changeDeadline: (id, v, reason) => {
       const t0 = db.tasks.find((t) => t.id === id);
       if (!t0) return { ok: false };
+      const lr = linkedAgreedRequest(db, t0);
+      if (lr) { toast(`Deadline đã chốt với ${deptById(db, lr.fromDeptId)?.name} qua Yêu cầu ${lr.code} — đổi trong Yêu cầu (Đề xuất đổi deadline), không đổi trực tiếp từ task.`, "warn"); return { ok: false, code: "REQUEST_LOCKED" }; }
       if (!perms.changeDeadline(db, me, t0)) { toast(t0.deadlineConfirmed ? "Deadline đã xác nhận — chỉ Leader/Quản lý đổi được" : "Không có quyền đổi deadline", "warn"); return { ok: false }; }
       if (t0.deadlineConfirmed && !reason?.trim()) {
         return { ok: false, code: "REASON_REQUIRED", msg: "Deadline đã xác nhận — cần ghi lý do đổi" };
@@ -4697,7 +4736,7 @@ export default function App() {
     resolveProjectChange: (projectId, crId, decision) => setDb((prev) => {
       const p0 = prev.projects.find((p) => p.id === projectId); if (!p0) return prev;
       const cr = (p0.changeRequests || []).find((c) => c.id === crId); if (!cr || cr.status !== "pending") return prev;
-      if (me.role !== "ceo" && !isMgr(me)) { toast("Chỉ CEO/Admin duyệt thay đổi lớn", "warn"); return prev; }
+      if (!isCeo(me)) { toast("Chỉ CEO duyệt thay đổi lớn của dự án (Admin hệ thống không có quyền business này)", "warn"); return prev; }
       const db2 = { ...prev, projects: prev.projects.map((p) => {
         if (p.id !== projectId) return p;
         let np = { ...p, changeRequests: p.changeRequests.map((c) => c.id === crId ? { ...c, status: decision, resolvedAt: Date.now(), resolvedBy: meId } : c) };
@@ -4775,10 +4814,7 @@ export default function App() {
         if (!(r.handlerId === meId || isReceiverFor(prev, me, r.toDeptId))) { toast("Chỉ người xử lý hoặc leader phòng nhận mới bàn giao được", "warn"); return prev; }
         /* Bàn giao phải có kết quả thực tế — cùng chuẩn với gửi duyệt task: tóm tắt + (link hoặc file) */
         const linkedTask = r.taskId ? prev.tasks.find((t) => t.id === r.taskId) : null;
-        if (linkedTask) {
-          const hasActual = linkedTask.actual?.summary?.trim() && (linkedTask.actual.links?.length > 0 || linkedTask.attachments?.length > 0);
-          if (!hasActual) { toast("Cần Kết quả thực tế đầy đủ (tóm tắt + link/file) trong task trước khi bàn giao", "warn"); return prev; }
-        }
+        if (linkedTask && !taskActualReady(linkedTask)) { toast("Cần Kết quả thực tế đầy đủ (tóm tắt + link/file) trong task trước khi bàn giao", "warn"); return prev; }
         next = mapReq(prev, id, (x) => log({ ...x, status: "delivered", deliveredAt: Date.now() }, "bàn giao kết quả"));
         if (r.taskId) next = { ...next, tasks: next.tasks.map((t) => t.id === r.taskId && !["done", "review"].includes(t.status) ? { ...t, status: "review" } : t) };
         next = notify(next, r.fromUserId, `Đã bàn giao, chờ bạn xác nhận: ${r.title}`, { requestId: id }, "act");
@@ -4929,10 +4965,12 @@ export default function App() {
       setDb((prev) => ({ ...prev, hrProcesses: prev.hrProcesses.map((x) => x.id === id ? { ...x, status: "closed", closedAt: Date.now(), closeNote: force ? `Đóng cưỡng bức bởi ${me.name}: ${reason}` : "Đóng đủ điều kiện" } : x) }));
       return { ok: true };
     },
-    addBlocker: (projectId, f) => setDb((prev) => { const pj = prev.projects.find((p) => p.id === projectId); return pushAudit({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, issues: [...p.issues, { id: uid("i"), title: f.title, desc: f.desc || "", severity: f.severity, ownerId: f.ownerId, deptId: f.deptId || null, dueDate: f.dueDate, nextAction: f.nextAction || "", status: "OPEN", relatedTaskId: f.relatedTaskId || null, escalation: 0, createdAt: Date.now(), resolvedAt: null, resolutionNote: "" }] } : p) }, meId, { action: "Tạo blocker", entity: "blocker", entityId: projectId, entityLabel: f.title, newValue: (f.severity || "").toUpperCase(), projectId, brandId: pj?.brandId }); }),
-    updateBlocker: (projectId, bid, patch) => setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, issues: p.issues.map((i) => i.id === bid ? { ...i, ...patch } : i) } : p) })),
+    addBlocker: (projectId, f) => { const p0 = projById(db, projectId); if (!(canManageProject(db, me, p0) || memberCan(p0, me.id, "canManageBlocker"))) { toast("Không có quyền ghi nhận blocker cho dự án này", "warn"); return; } setDb((prev) => { const pj = prev.projects.find((p) => p.id === projectId); return pushAudit({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, issues: [...p.issues, { id: uid("i"), title: f.title, desc: f.desc || "", severity: f.severity, ownerId: f.ownerId, deptId: f.deptId || null, dueDate: f.dueDate, nextAction: f.nextAction || "", status: "OPEN", relatedTaskId: f.relatedTaskId || null, escalation: 0, createdAt: Date.now(), resolvedAt: null, resolutionNote: "" }] } : p) }, meId, { action: "Tạo blocker", entity: "blocker", entityId: projectId, entityLabel: f.title, newValue: (f.severity || "").toUpperCase(), projectId, brandId: pj?.brandId }); }); },
+    updateBlocker: (projectId, bid, patch) => { const p0 = projById(db, projectId); if (!(canManageProject(db, me, p0) || memberCan(p0, me.id, "canManageBlocker"))) { toast("Không có quyền cập nhật blocker", "warn"); return; } setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, issues: p.issues.map((i) => i.id === bid ? { ...i, ...patch } : i) } : p) })); },
     resolveBlocker: (projectId, bid, note) => {
       if (!note?.trim()) return { ok: false, msg: "Không đóng blocker khi chưa có ghi chú cách xử lý" };
+      const p0 = projById(db, projectId);
+      if (!(canManageProject(db, me, p0) || memberCan(p0, me.id, "canManageBlocker"))) { toast("Không có quyền đóng blocker", "warn"); return { ok: false }; }
       setDb((prev) => { const pj = prev.projects.find((p) => p.id === projectId); const bk = pj?.issues.find((i) => i.id === bid); return pushAudit({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, issues: p.issues.map((i) => i.id === bid ? { ...i, status: "RESOLVED", resolvedAt: Date.now(), resolutionNote: note.trim() } : i) } : p) }, meId, { action: "Đóng blocker", entity: "blocker", entityId: bid, entityLabel: bk?.title || "", reason: note.trim(), projectId, brandId: pj?.brandId }); });
       return { ok: true };
     },
@@ -5051,7 +5089,7 @@ export default function App() {
 }
 
 /* Export nội bộ phục vụ unit test (không dùng trong UI) */
-export const __internals = { buildSeed, perms, runScheduler, runAlerts, occursToday, canManage, canCreateTaskFor, canApplyTaskPatch, assignableUsers, canViewProject, canViewRequest, canViewDoc, deptReceiverId, isReceiverFor, userById, deptById, getEligibleApprovers, isSenderAuthorized, APPROVER_RULES, TASK_FIELD_PERM, TASK_FIELD_FORBIDDEN, computeProjectHealth, milestoneProgress, weightedTaskProgress, msOverdue, msDueSoon, projBrand, computeRequestSla, escalationLevel, SLA_HOURS, projectMember, memberCan, taskDepStatus, PROJECT_ROLES, PROJECT_TEMPLATES, canManageProject, auditEntry, pushAudit };
+export const __internals = { buildSeed, perms, runScheduler, runAlerts, occursToday, canManage, canCreateTaskFor, canApplyTaskPatch, assignableUsers, canViewProject, canViewRequest, canViewDoc, deptReceiverId, isReceiverFor, userById, deptById, getEligibleApprovers, isSenderAuthorized, APPROVER_RULES, TASK_FIELD_PERM, TASK_FIELD_FORBIDDEN, computeProjectHealth, milestoneProgress, weightedTaskProgress, msOverdue, msDueSoon, projBrand, computeRequestSla, escalationLevel, SLA_HOURS, projectMember, memberCan, taskDepStatus, PROJECT_ROLES, PROJECT_TEMPLATES, canManageProject, auditEntry, pushAudit, isCeo, isMgr, isProjectMemberOf, linkedAgreedRequest, taskActualReady };
 /* ============================================================
    HR WORKSPACE — quy trình nhân sự dựa trên task
    Phạm vi: onboarding, thử việc, đào tạo, hồ sơ, offboarding,
