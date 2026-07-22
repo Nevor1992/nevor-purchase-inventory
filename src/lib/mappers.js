@@ -104,7 +104,10 @@ export const requestFromRow = (r, { proposals = [], comments = [] } = {}) => ({
   proposedDeadline: r.proposed_deadline, agreedDeadline: r.agreed_deadline,
   rejectReason: r.reject_reason || "", authorized_sender_ids: r.authorized_sender_ids || [],
   isConfidential: r.is_confidential === true, allowedViewerIds: r.allowed_viewer_ids || [],
-  deliverable: r.deliverable || "", deleted: r.deleted === true, createdAt: ts(r.created_at),
+  deliverable: r.deliverable || "", acceptanceCriteria: r.acceptance_criteria || "",
+  deleted: r.deleted === true, createdAt: ts(r.created_at),
+  receivedAt: ts(r.received_at), deliveredAt: ts(r.delivered_at), confirmedAt: ts(r.confirmed_at),
+  deadlineChange: r.deadline_change || null, ceoOverride: r.ceo_override || null,
   pendingHandlerId: r.pending_handler_id || null,
   deadlineProposals: proposals.map((p) => ({ by: p.proposed_by, side: p.side, date: p.proposed_date, at: ts(p.created_at) })),
   comments: comments.map((c) => ({ id: c.id, userId: c.user_id, text: c.body, at: ts(c.created_at) })),
@@ -121,7 +124,10 @@ export const requestToRow = (r) => ({
   proposed_deadline: r.proposedDeadline || null, agreed_deadline: r.agreedDeadline || null,
   reject_reason: r.rejectReason || null, authorized_sender_ids: r.authorized_sender_ids || [],
   is_confidential: !!r.isConfidential, allowed_viewer_ids: r.allowedViewerIds || [],
-  deliverable: r.deliverable || null, deleted: !!r.deleted,
+  deliverable: r.deliverable || null, acceptance_criteria: r.acceptanceCriteria || null,
+  received_at: iso(r.receivedAt), delivered_at: iso(r.deliveredAt), confirmed_at: iso(r.confirmedAt),
+  deadline_change: r.deadlineChange || null, ceo_override: r.ceoOverride || null,
+  deleted: !!r.deleted,
 });
 
 /* ---------------- notifications / documents / hr processes / filters ---------------- */

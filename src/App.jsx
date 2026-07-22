@@ -80,10 +80,31 @@ const REQ_STATUSES = {
   accepted:   { label: "Đã tiếp nhận",    pill: "bg-blue-50 text-blue-700" },
   processing: { label: "Đang xử lý",      pill: "bg-indigo-50 text-indigo-700" },
   delivered:  { label: "Đã bàn giao",     pill: "bg-violet-50 text-violet-700" },
+  revise:     { label: "Cần chỉnh sửa",   pill: "bg-orange-50 text-orange-700" },
   confirmed:  { label: "Hoàn thành",      pill: "bg-emerald-50 text-emerald-700" },
   rejected:   { label: "Từ chối",         pill: "bg-red-50 text-red-700" },
   cancelled:  { label: "Đã hủy",          pill: "bg-zinc-100 text-zinc-400" },
 };
+/* SLA theo mức ưu tiên (giờ). Thực hiện (execute) đo theo agreedDeadline. */
+const SLA_HOURS = {
+  urgent: { receive: 4, agree: 8, accept: 12 },
+  high:   { receive: 8, agree: 24, accept: 24 },
+  normal: { receive: 24, agree: 48, accept: 48 },
+  low:    { receive: 48, agree: 72, accept: 72 },
+};
+const SLA_LEVELS = {
+  ok:     { label: "Trong hạn",     cls: "bg-emerald-50 text-emerald-700" },
+  warn:   { label: "Sắp quá SLA",   cls: "bg-amber-50 text-amber-700" },
+  over:   { label: "Quá SLA",       cls: "bg-orange-50 text-orange-700" },
+  severe: { label: "Quá SLA nặng",  cls: "bg-red-50 text-red-600" },
+};
+/* Mẫu yêu cầu theo loại việc — điền nhanh, có sẵn trường bắt buộc (§12) */
+const REQUEST_TEMPLATES = [
+  { id: "content_media", label: "Content → Media (thiết kế)", toDeptId: "media", title: "Yêu cầu thiết kế: ", deliverable: "Bộ ấn phẩm đúng số lượng & kích thước", acceptanceCriteria: "Đúng brief, đủ size, đúng định dạng, có file gốc", content: "Brand: \nCampaign/Project: \nLoại nội dung: \nSố lượng: \nKích thước: \nĐịnh dạng: \nMoodboard (link): \nHeadline: " },
+  { id: "booking_wh", label: "Booking KOC → Kho (gửi mẫu)", toDeptId: "wh", title: "Gửi hàng mẫu: ", deliverable: "Hàng mẫu đã gửi + mã vận đơn", acceptanceCriteria: "Đúng SKU/số lượng, có mã vận đơn, đúng người nhận", content: "Brand: \nSản phẩm/SKU: \nSố lượng: \nNgười nhận: \nĐịa chỉ: \nSĐT: \nYêu cầu mã vận đơn: Có\nGhi chú đóng gói: " },
+  { id: "cx_product", label: "CX → Product/Thu mua (lỗi SP)", toDeptId: "proc", title: "Phản ánh lỗi sản phẩm: ", deliverable: "Phương án xử lý + số lượng đổi trả", acceptanceCriteria: "Có nguyên nhân + phương án + thời hạn xử lý", content: "Brand: \nSKU: \nLoại lỗi: \nSố lượng phản ánh: \nTỷ lệ lỗi (nếu có): \nẢnh/video (link): \nMức độ ảnh hưởng: \nĐề xuất xử lý: " },
+  { id: "ecom_content", label: "E-commerce → Content (lên sàn)", toDeptId: "content", title: "Nội dung lên sàn: ", deliverable: "Nội dung/hình ảnh đúng chuẩn sàn", acceptanceCriteria: "Đúng kênh, đúng hạng mục, kịp deadline lên sàn", content: "Brand: \nKênh bán: \nCampaign: \nLink sản phẩm: \nHạng mục cần làm: \nDeadline lên sàn: " },
+];
 
 const PROJECT_STATUSES = {
   prep:      { label: "Chuẩn bị",       pill: "bg-zinc-100 text-zinc-600" },
@@ -336,6 +357,17 @@ const SEED_DOCS = [
 function buildSeed() {
   const tasks = buildTasks();
   const requests = buildRequests(tasks);
+  /* Mốc thời gian SLA cho request seed (suy từ trạng thái) + 1 request Level-3 để demo CEO */
+  requests.forEach((r) => {
+    if (["accepted", "processing", "delivered", "confirmed", "revise"].includes(r.status)) r.receivedAt = r.receivedAt || (r.createdAt + 6 * HOUR);
+    if (["delivered", "confirmed"].includes(r.status)) r.deliveredAt = r.deliveredAt || (Date.now() - 6 * HOUR);
+    if (r.status === "confirmed") r.confirmedAt = r.confirmedAt || (Date.now() - 2 * HOUR);
+  });
+  {
+    /* R3 (Media chưa tiếp nhận) → khẩn + tạo lâu → Level 3 để CEO nhìn thấy trong demo */
+    const r3 = requests[2];
+    if (r3) { r3.priority = "urgent"; r3.createdAt = Date.now() - 3 * DAY; r3.acceptanceCriteria = "Đủ 2 mẫu màu mới, đúng chuẩn quay"; }
+  }
   /* Gắn brand: kế thừa từ phòng ban brand-specific → dự án → từ khóa; còn lại là Chung (null) */
   const brandOfDept = (id) => SEED_DEPTS.find((d) => d.id === id)?.brandId || null;
   const brandOfPrj = (id) => SEED_PROJECTS.find((p) => p.id === id)?.brandId || null;
@@ -815,6 +847,48 @@ function computeProjectHealth(db, p) {
   if (off.length) return { level: "OFF_TRACK", reasons: [...off, ...risk] };
   if (risk.length) return { level: "AT_RISK", reasons: risk };
   return { level: "ON_TRACK", reasons: [] };
+}
+
+/* ---------- Request SLA + escalation (pure, testable) ----------
+   4 pha SLA: Tiếp nhận → Chốt deadline → Thực hiện → Nghiệm thu.
+   Pha Thực hiện đo theo agreedDeadline; các pha còn lại đo theo giờ trôi qua. */
+const HOUR = 3600000;
+const SLA_PHASE_LABEL = { receive: "Tiếp nhận", agree: "Chốt deadline", execute: "Thực hiện", accept: "Nghiệm thu", done: "Hoàn thành", closed: "Đã đóng" };
+function computeRequestSla(db, r) {
+  const prio = SLA_HOURS[r.priority] ? r.priority : "normal";
+  const cfg = SLA_HOURS[prio];
+  const lastLogAt = r.logs && r.logs.length ? r.logs[r.logs.length - 1].at : r.createdAt;
+  const byHours = (base, slaH) => {
+    const h = (Date.now() - base) / HOUR;
+    const ratio = h / slaH;
+    const level = ratio < 0.75 ? "ok" : ratio < 1 ? "warn" : ratio < 2 ? "over" : "severe";
+    const over = h - slaH;
+    const detail = level === "ok" || level === "warn" ? `còn ~${Math.max(0, Math.round(slaH - h))}h` : `quá ~${Math.round(over)}h`;
+    return { level, detail, slaH };
+  };
+  if (r.status === "confirmed") return { phase: "done", phaseLabel: SLA_PHASE_LABEL.done, level: "ok", detail: "" };
+  if (["rejected", "cancelled"].includes(r.status)) return { phase: "closed", phaseLabel: SLA_PHASE_LABEL.closed, level: "ok", detail: "" };
+  let phase, res;
+  if (r.status === "pending") { phase = "receive"; res = byHours(r.createdAt, cfg.receive); }
+  else if (["info", "deadline_proposed"].includes(r.status)) { phase = "agree"; res = byHours(r.receivedAt || r.createdAt, cfg.agree); }
+  else if (["accepted", "processing", "revise"].includes(r.status)) {
+    phase = "execute";
+    const dl = r.agreedDeadline ? daysLeft(r.agreedDeadline) : 99;
+    const level = dl >= 1 ? "ok" : dl === 0 ? "warn" : dl <= -2 ? "severe" : "over";
+    res = { level, detail: dl >= 0 ? (dl === 0 ? "đến hạn hôm nay" : `còn ${dl} ngày`) : `quá hạn ${-dl} ngày`, slaH: null };
+  } else if (r.status === "delivered") { phase = "accept"; res = byHours(r.deliveredAt || lastLogAt, cfg.accept); }
+  else { phase = "receive"; res = byHours(r.createdAt, cfg.receive); }
+  return { phase, phaseLabel: SLA_PHASE_LABEL[phase], level: res.level, detail: res.detail };
+}
+/* Escalation Level 0→3 (0 handler tự xử lý · 1 receiver contact · 2 leader 2 phòng · 3 CEO) */
+function escalationLevel(db, r, sla) {
+  const s = sla || computeRequestSla(db, r);
+  if (["done", "closed"].includes(s.phase)) return 0;
+  let lvl = { ok: 0, warn: 1, over: 2, severe: 3 }[s.level] ?? 0;
+  const proj = r.projectId ? projById(db, r.projectId) : null;
+  const keyProject = (proj && proj.priority === "urgent") || r.priority === "urgent";
+  if ((s.level === "over" || s.level === "severe") && keyProject) lvl = 3;
+  return lvl;
 }
 
 /* ---------- pure db mutators ---------- */
@@ -2141,12 +2215,14 @@ function CeoPanel({ visible: allVisible }) {
   /* Dự án có nguy cơ — theo Health tự động (kèm lý do), không chỉ đếm % task */
   const riskPrj = keyPrj.map((p) => ({ p, h: computeProjectHealth(db, p) })).filter((x) => x.h.level !== "ON_TRACK").sort((a, b) => (a.h.level === "OFF_TRACK" ? -1 : 1) - (b.h.level === "OFF_TRACK" ? -1 : 1));
   const lateMilestones = keyPrj.flatMap((p) => (p.milestones || []).filter(msOverdue).map((m) => ({ ...m, projectId: p.id, projectName: p.name })));
+  /* Chỉ Level 3 mới tới CEO — không đưa mọi request bình thường */
+  const slaSevere = db.requests.filter((r) => !r.deleted && brandMatch(r.brandId)).map((r) => ({ r, sla: computeRequestSla(db, r) })).map((x) => ({ ...x, esc: escalationLevel(db, x.r, x.sla) })).filter((x) => x.esc >= 3);
   const escalated = db.notifs.filter((n) => n.userId === "ceo" && !n.read && n.level === "urgent").slice(0, 5);
   const AC = ({ items, label, tone, render }) => items.length === 0 ? null : (
     <div className="mb-2"><p className={`mb-1 text-[11px] font-semibold ${tone}`}>{label} · {items.length}</p><div className="space-y-0.5">{items.slice(0, 5).map(render)}</div></div>
   );
   const TRow = (t) => <button key={t.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-zinc-50" onClick={() => openTask(t.id)}><span className="flex-1 truncate text-[12px] text-zinc-700">{t.isConfidential ? "(Công việc bảo mật)" : t.name}</span><span className="hidden sm:inline text-[10px] text-zinc-400">{userById(db, t.ownerId)?.name}</span>{t.deadline && <span className={`text-[10px] tabular-nums ${deadlineMeta(t).cls}`}>{deadlineMeta(t).label}</span>}<ChevronRight className="h-3 w-3 shrink-0 text-zinc-300" /></button>;
-  const acEmpty = !ceoReview.length && !critBlockers.length && !urgentOver.length && !riskPrj.length && !lateMilestones.length && !crossStuck.length && !noOwnerBlockers.length;
+  const acEmpty = !ceoReview.length && !critBlockers.length && !urgentOver.length && !riskPrj.length && !lateMilestones.length && !slaSevere.length && !crossStuck.length && !noOwnerBlockers.length;
   return (
     <div className="mt-1">
       <div className="mb-3 flex items-center gap-3 flex-wrap">
@@ -2165,6 +2241,7 @@ function CeoPanel({ visible: allVisible }) {
         <AC items={urgentOver} label="Khẩn cấp quá hạn nhiều ngày" tone="text-red-600" render={TRow} />
         <AC items={riskPrj} label="Dự án có nguy cơ" tone="text-amber-600" render={({ p, h }) => <button key={p.id} className="flex w-full items-start gap-2 rounded-md px-1.5 py-1 text-left hover:bg-zinc-50" onClick={() => nav("projectDetail", { id: p.id })}><span className="min-w-0 flex-1"><span className="flex items-center gap-1.5"><span className="truncate text-[12px] text-zinc-700">{p.name}</span><HealthBadge h={h} /></span>{h.reasons[0] && <span className="block truncate text-[10px] text-zinc-400">{h.reasons[0]}</span>}</span><ChevronRight className="mt-0.5 h-3 w-3 shrink-0 text-zinc-300" /></button>} />
         <AC items={lateMilestones} label="Milestone đã quá hạn" tone="text-red-600" render={(m) => <button key={m.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-zinc-50" onClick={() => nav("projectDetail", { id: m.projectId })}><span className="flex-1 truncate text-[12px] text-zinc-700">{m.name}</span><span className="text-[10px] text-zinc-400">{m.projectName} · hạn {fmtDFull(m.plannedDeadline)}</span><ChevronRight className="h-3 w-3 text-zinc-300" /></button>} />
+        <AC items={slaSevere} label="Yêu cầu quá SLA nghiêm trọng (Level 3)" tone="text-red-600" render={({ r, sla }) => <button key={r.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-zinc-50" onClick={() => openRequest(r.id)}><span className="flex-1 truncate text-[12px] text-zinc-700">{r.title}</span><span className="text-[10px] text-zinc-400">{sla.phaseLabel}</span><ReqPill s={r.status} /><ChevronRight className="h-3 w-3 text-zinc-300" /></button>} />
         <AC items={crossStuck} label="Yêu cầu liên phòng ban bị tắc" tone="text-sky-600" render={(r) => <button key={r.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-zinc-50" onClick={() => openRequest(r.id)}><span className="flex-1 truncate text-[12px] text-zinc-700">{r.title}</span><ReqPill s={r.status} /><ChevronRight className="h-3 w-3 text-zinc-300" /></button>} />
         <AC items={noOwnerBlockers} label="Vấn đề chưa có người xử lý" tone="text-orange-600" render={(i) => <button key={i.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-zinc-50" onClick={() => nav("projectDetail", { id: i.projectId })}><span className="flex-1 truncate text-[12px] text-zinc-700">{i.title}</span><ChevronRight className="h-3 w-3 text-zinc-300" /></button>} />
       </div>
@@ -2688,12 +2765,15 @@ function DecisionsTab({ p, editable }) {
    ============================================================ */
 function RequestRow({ r }) {
   const { db, openRequest } = useApp();
+  const sla = computeRequestSla(db, r);
+  const showSla = !["confirmed", "rejected", "cancelled"].includes(r.status) && sla.level !== "ok";
   return (
     <button onClick={() => openRequest(r.id)} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-zinc-50">
       <div className="flex-1 min-w-0">
         <p className="truncate text-[13px] font-medium text-zinc-700">{r.title}</p>
         <p className="text-[11px] text-zinc-400">{deptById(db, r.fromDeptId)?.name} → {deptById(db, r.toDeptId)?.name} · hạn {fmtD(r.agreedDeadline || r.proposedDeadline)}</p>
       </div>
+      {showSla && <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${SLA_LEVELS[sla.level].cls}`}>{SLA_LEVELS[sla.level].label}</span>}
       <BrandChip id={r.brandId} />
       <ReqPill s={r.status} />
     </button>
@@ -2740,18 +2820,27 @@ function RequestsPage() {
 }
 function RequestForm({ onClose }) {
   const { db, me, act, toast } = useApp();
-  const [f, setF] = useState({ title: "", content: "", toDeptId: "", priority: "normal", proposedDeadline: D(5), deliverable: "", brandId: deptBrand(db, me.deptId) });
+  const [f, setF] = useState({ title: "", content: "", toDeptId: "", priority: "normal", proposedDeadline: D(5), deliverable: "", acceptanceCriteria: "", brandId: deptBrand(db, me.deptId) });
+  const [tpl, setTpl] = useState("");
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const applyTpl = (id) => {
+    setTpl(id);
+    const t = REQUEST_TEMPLATES.find((x) => x.id === id);
+    if (!t) return;
+    setF((x) => ({ ...x, title: t.title, content: t.content, deliverable: t.deliverable, acceptanceCriteria: t.acceptanceCriteria, toDeptId: db.depts.some((d) => d.id === t.toDeptId && d.active !== false) ? t.toDeptId : x.toDeptId }));
+  };
   return (
     <Modal title="Tạo yêu cầu phối hợp" onClose={onClose} wide>
+      <Field label="Mẫu yêu cầu (điền nhanh)"><select className={inputCls} value={tpl} onChange={(e) => applyTpl(e.target.value)}><option value="">— Không dùng mẫu —</option>{REQUEST_TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}</select></Field>
       <Field label="Tiêu đề" req><input className={inputCls} value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="Ví dụ: Cung cấp thông tin sản phẩm mới" /></Field>
-      <Field label="Nội dung yêu cầu" req><textarea className={inputCls} rows={3} value={f.content} onChange={(e) => set("content", e.target.value)} /></Field>
+      <Field label="Nội dung yêu cầu" req><textarea className={inputCls} rows={f.content.includes("\n") ? 6 : 3} value={f.content} onChange={(e) => set("content", e.target.value)} /></Field>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3">
         <Field label="Phòng ban nhận" req><select className={inputCls} value={f.toDeptId} onChange={(e) => set("toDeptId", e.target.value)}><option value="">— Chọn —</option>{activeDepts(db).filter((d) => d.id !== me.deptId).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
         {f.toDeptId === "hr" && <Field label="Loại yêu cầu nhân sự"><select className={inputCls} value={f.reqType || ""} onChange={(e) => { const v = e.target.value; setF((x) => ({ ...x, reqType: v, isConfidential: ["Xác nhận hồ sơ", "Nghỉ phép", "Chính sách/Phúc lợi"].includes(v) ? true : x.isConfidential })); }}><option value="">— Chọn loại —</option>{["Xác nhận hồ sơ", "Nghỉ phép", "Trang thiết bị", "Chính sách/Phúc lợi", "Khác"].map((x) => <option key={x} value={x}>{x}</option>)}</select></Field>}
         <Field label="Mức độ ưu tiên"><select className={inputCls} value={f.priority} onChange={(e) => set("priority", e.target.value)}>{PRIORITY_ORDER.map((p) => <option key={p} value={p}>{PRIORITIES[p].label}</option>)}</select></Field>
         <Field label="Deadline đề xuất" req><input type="date" className={inputCls} value={f.proposedDeadline} onChange={(e) => set("proposedDeadline", e.target.value)} /></Field>
         <Field label="Kết quả cần bàn giao"><input className={inputCls} value={f.deliverable} onChange={(e) => set("deliverable", e.target.value)} /></Field>
+        <Field label="Tiêu chí nghiệm thu"><input className={inputCls} value={f.acceptanceCriteria} onChange={(e) => set("acceptanceCriteria", e.target.value)} placeholder="Điều kiện coi là đạt" /></Field>
         <Field label="Brand liên quan"><select className={inputCls} value={f.brandId || ""} onChange={(e) => set("brandId", e.target.value || null)}><option value="">Chung (cả 2 brand)</option>{BRAND_ORDER.map((b) => <option key={b} value={b}>{BRANDS[b].label}</option>)}</select></Field>
       </div>
       <label className="mb-2 flex items-center gap-2 text-[13px] text-zinc-600"><input type="checkbox" checked={!!f.isConfidential} onChange={(e) => set("isConfidential", e.target.checked)} className="accent-zinc-800" />Yêu cầu bảo mật — chỉ leader hai phòng &amp; người liên quan xem (dùng cho hồ sơ, nghỉ phép, chính sách nhân sự)</label>
@@ -2765,7 +2854,7 @@ function RequestForm({ onClose }) {
 /* Tiến trình yêu cầu — timeline dọc, dễ hiểu cho nhân viên (mục 18) */
 function RequestTimeline({ r }) {
   const stages = ["Gửi yêu cầu", "Phòng nhận tiếp nhận", "Chốt deadline", "Đang xử lý", "Bàn giao kết quả", "Hoàn thành"];
-  const idx = { pending: 0, info: 0, deadline_proposed: 1, accepted: 2, processing: 3, delivered: 4, confirmed: 5, rejected: 0, cancelled: 0 }[r.status] ?? 0;
+  const idx = { pending: 0, info: 0, deadline_proposed: 1, accepted: 2, processing: 3, revise: 3, delivered: 4, confirmed: 5, rejected: 0, cancelled: 0 }[r.status] ?? 0;
   const terminal = r.status === "rejected" ? "Yêu cầu đã bị từ chối" : r.status === "cancelled" ? "Yêu cầu đã bị hủy" : null;
   return (
     <div className="mb-4 rounded-xl border border-zinc-200 p-3.5">
@@ -2811,6 +2900,13 @@ function RequestDrawer({ reqId, onClose }) {
   const isHandler = r.handlerId === me.id;
   /* Bên gửi có quyền thao tác = người tạo / leader phòng gửi / authorized sender — KHÔNG phải cả phòng */
   const isSender = isSenderAuthorized(db, me, r);
+  const isCeo = me.role === "ceo";
+  const sla = computeRequestSla(db, r);
+  const escL = escalationLevel(db, r, sla);
+  const canChangeDeadline = ["accepted", "processing", "revise"].includes(r.status) && (isSender || isReceiverLead || isHandler);
+  const dc = r.deadlineChange && r.deadlineChange.status === "pending" ? r.deadlineChange : null;
+  const dcCanDecide = dc && (dc.side === "receiver" ? isSender || isMgr(me) : isReceiverLead || isHandler || isMgr(me));
+  const ESC_LABEL = ["", "Level 1 · báo đầu mối", "Level 2 · báo leader 2 phòng", "Level 3 · báo CEO"];
   const Info = ({ label, children }) => <div className="grid grid-cols-[130px_1fr] gap-2 py-1.5 text-[13px]"><span className="text-zinc-400 text-xs">{label}</span><div className="text-zinc-700">{children}</div></div>;
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-zinc-900/20" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -2824,6 +2920,32 @@ function RequestDrawer({ reqId, onClose }) {
           <h2 className="mt-1.5 text-[15px] font-semibold text-zinc-900">{r.title}</h2>
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4">
+          {/* SLA + escalation */}
+          {!["confirmed", "rejected", "cancelled"].includes(r.status) && (
+            <div className="mb-3 flex items-center gap-2 flex-wrap rounded-lg bg-zinc-50 border border-zinc-100 px-3 py-2">
+              <span className="text-[11px] text-zinc-400">SLA · {sla.phaseLabel}</span>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${SLA_LEVELS[sla.level].cls}`}>{SLA_LEVELS[sla.level].label}{sla.detail ? ` · ${sla.detail}` : ""}</span>
+              {escL >= 1 && <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${escL >= 3 ? "bg-red-50 text-red-600" : escL === 2 ? "bg-orange-50 text-orange-700" : "bg-amber-50 text-amber-700"}`}>{ESC_LABEL[escL]}</span>}
+            </div>
+          )}
+          {r.ceoOverride && (
+            <div className="mb-3 rounded-lg bg-rose-50 border border-rose-100 px-3 py-2 text-[12px] text-rose-700">
+              <b>Deadline được CEO điều chỉnh trực tiếp</b> → {fmtDFull(r.agreedDeadline)}{r.ceoOverride.reason ? ` — ${r.ceoOverride.reason}` : ""}
+            </div>
+          )}
+          {dc && (
+            <div className="mb-4 rounded-xl bg-amber-50 border border-amber-100 p-3">
+              <p className="text-xs font-medium text-amber-700 mb-1">Đề xuất đổi deadline (deadline cũ vẫn giữ tới khi được duyệt)</p>
+              <p className="text-[12px] text-zinc-600">{fmtDFull(r.agreedDeadline)} → <b>{fmtDFull(dc.proposedDeadline)}</b>{dc.reason ? ` — ${dc.reason}` : ""}{dc.impact ? ` · Tác động: ${dc.impact}` : ""}</p>
+              <p className="text-[11px] text-zinc-400 mt-0.5">Bên đề xuất: {userById(db, dc.by)?.name} ({dc.side === "receiver" ? "bên nhận" : "bên gửi"})</p>
+              {dcCanDecide ? (
+                <div className="mt-2 flex gap-2">
+                  <button className={btnPri} onClick={() => { act.reqAction(r.id, "approveDeadlineChange"); toast("Đã duyệt đổi deadline"); }}>Đồng ý đổi</button>
+                  <button className={btnSec} onClick={() => { act.reqAction(r.id, "rejectDeadlineChange"); toast("Đã từ chối đổi deadline"); }}>Từ chối</button>
+                </div>
+              ) : <p className="text-[11px] text-zinc-400 mt-1">Chờ bên kia duyệt.</p>}
+            </div>
+          )}
           {/* Action bars */}
           {r.status === "pending" && isReceiverLead && (
             <div className="mb-4 rounded-xl bg-sky-50 border border-sky-100 p-3">
@@ -2860,8 +2982,9 @@ function RequestDrawer({ reqId, onClose }) {
               <button className={btnSec} onClick={() => { act.reqAction(r.id, "resend"); toast("Đã gửi lại yêu cầu"); }}>Đã bổ sung, gửi lại</button>
             </div>
           )}
-          {["accepted", "processing"].includes(r.status) && (isHandler || isReceiverLead) && (
-            <div className="mb-4 flex gap-2">
+          {r.status === "revise" && <div className="mb-3 rounded-xl bg-orange-50 border border-orange-100 p-3 text-xs text-orange-700"><b>Bên gửi yêu cầu chỉnh sửa.</b> {r.logs.filter((l) => l.text.startsWith("yêu cầu chỉnh sửa")).slice(-1)[0]?.text.replace("yêu cầu chỉnh sửa:", "").trim()}</div>}
+          {["accepted", "processing", "revise"].includes(r.status) && (isHandler || isReceiverLead) && (
+            <div className="mb-4 flex gap-2 flex-wrap">
               {r.status === "accepted" && <button className={btnSec} onClick={() => { act.reqAction(r.id, "start"); toast("Đã chuyển sang Đang xử lý"); }}>Bắt đầu xử lý</button>}
               <button className={btnPri} onClick={() => {
                 const linked = r.taskId ? db.tasks.find((t) => t.id === r.taskId) : null;
@@ -2875,9 +2998,18 @@ function RequestDrawer({ reqId, onClose }) {
           )}
           {r.status === "delivered" && isSender && (
             <div className="mb-4 rounded-xl bg-violet-50 border border-violet-100 p-3">
-              <p className="text-xs text-violet-700 font-medium mb-2">Phòng nhận đã bàn giao — bạn cần xác nhận để đóng yêu cầu</p>
-              <button className={btnPri} onClick={() => { act.reqAction(r.id, "confirm"); toast("Đã xác nhận hoàn thành"); }}><BadgeCheck className="h-4 w-4" />Xác nhận hoàn thành</button>
+              <p className="text-xs text-violet-700 font-medium mb-2">Phòng nhận đã bàn giao — nghiệm thu để đóng, hoặc yêu cầu chỉnh sửa</p>
+              <div className="flex flex-wrap gap-2">
+                <button className={btnPri} onClick={() => { act.reqAction(r.id, "confirm"); toast("Đã xác nhận hoàn thành"); }}><BadgeCheck className="h-4 w-4" />Xác nhận hoàn thành</button>
+                <button className={btnSec} onClick={() => setModal({ type: "revise", note: "" })}><RotateCcw className="h-4 w-4" />Yêu cầu chỉnh sửa</button>
+              </div>
             </div>
+          )}
+          {(canChangeDeadline && !dc) && (
+            <button className={`${btnGhost} mb-3`} onClick={() => setModal({ type: "dchange", deadline: r.agreedDeadline, reason: "", impact: "" })}><CalendarDays className="h-3.5 w-3.5" />Đề xuất đổi deadline</button>
+          )}
+          {isCeo && ["accepted", "processing", "revise", "delivered", "deadline_proposed"].includes(r.status) && (
+            <button className={`${btnGhost} mb-3 text-rose-600`} onClick={() => setModal({ type: "ceo", deadline: r.agreedDeadline || r.proposedDeadline, reason: "", urgency: "high", impact: "" })}><Lock className="h-3.5 w-3.5" />CEO điều chỉnh deadline trực tiếp</button>
           )}
           {["pending", "info", "deadline_proposed", "accepted", "processing"].includes(r.status) && isSender && (
             <button className={`${btnGhost} mb-3`} onClick={() => setModal({ type: "cancel", reason: "" })}>Hủy yêu cầu</button>
@@ -2888,11 +3020,12 @@ function RequestDrawer({ reqId, onClose }) {
           <div className="rounded-xl border border-zinc-100 px-4 py-2 mb-4">
             <Info label="Phòng gửi"><DeptTag id={r.fromDeptId} /> · <UserChip id={r.fromUserId} /></Info>
             <Info label="Phòng nhận"><DeptTag id={r.toDeptId} /></Info>
-            <Info label="Người tiếp nhận"><UserChip id={r.receiverId} dash="Chưa tiếp nhận" /></Info>
-            <Info label="Người xử lý"><UserChip id={r.handlerId} dash="Chưa phân công" /></Info>
+            <Info label="Đầu mối tiếp nhận"><UserChip id={r.receiverId} dash="Chưa tiếp nhận" /></Info>
+            <Info label="Người xử lý (Handler)"><UserChip id={r.handlerId} dash="Chưa phân công" /></Info>
             <Info label="Deadline đề xuất">{fmtDFull(r.proposedDeadline)}</Info>
-            <Info label="Deadline thống nhất">{r.agreedDeadline ? <b>{fmtDFull(r.agreedDeadline)}</b> : <span className="text-zinc-300">Chưa thống nhất</span>}</Info>
-            <Info label="Kết quả bàn giao">{r.deliverable || "—"}</Info>
+            <Info label="Deadline thống nhất">{r.agreedDeadline ? <b>{fmtDFull(r.agreedDeadline)}</b> : <span className="text-zinc-300">Chưa thống nhất</span>}{r.ceoOverride && <span className="ml-1 text-[10px] text-rose-600">(CEO chỉnh)</span>}</Info>
+            <Info label="Kết quả cần bàn giao">{r.deliverable || "—"}</Info>
+            {r.acceptanceCriteria && <Info label="Tiêu chí nghiệm thu">{r.acceptanceCriteria}</Info>}
             {r.taskId && <Info label="Task liên kết"><button className="text-indigo-600 hover:underline" onClick={() => { onClose(); openTask(r.taskId); }}>Mở task liên phòng ban →</button></Info>}
           </div>
           <div className="mb-4">
@@ -2943,6 +3076,34 @@ function RequestDrawer({ reqId, onClose }) {
           <Modal title="Yêu cầu bổ sung thông tin" onClose={() => setModal(null)}>
             <Field label="Cần bổ sung gì?" req><textarea className={inputCls} rows={3} value={modal.note} onChange={(e) => setModal({ ...modal, note: e.target.value })} /></Field>
             <div className="flex justify-end gap-2"><button className={btnSec} onClick={() => setModal(null)}>Hủy</button><button className={btnPri} disabled={!modal.note.trim()} onClick={() => { act.reqAction(r.id, "info", { note: modal.note.trim() }); setModal(null); }}>Gửi</button></div>
+          </Modal>
+        )}
+        {modal?.type === "revise" && (
+          <Modal title="Yêu cầu chỉnh sửa" onClose={() => setModal(null)}>
+            <p className="mb-2 text-[13px] text-zinc-600">Yêu cầu và task sẽ chuyển sang <b>Cần chỉnh sửa</b>, người xử lý sửa rồi bàn giao lại.</p>
+            <Field label="Cần sửa gì? (bắt buộc)" req><textarea className={inputCls} rows={3} value={modal.note} onChange={(e) => setModal({ ...modal, note: e.target.value })} /></Field>
+            <div className="flex justify-end gap-2"><button className={btnSec} onClick={() => setModal(null)}>Hủy</button><button className={btnPri} disabled={!modal.note.trim()} onClick={() => { act.reqAction(r.id, "revise", { note: modal.note.trim() }); setModal(null); toast("Đã gửi yêu cầu chỉnh sửa"); }}>Gửi</button></div>
+          </Modal>
+        )}
+        {modal?.type === "dchange" && (
+          <Modal title="Đề xuất đổi deadline" onClose={() => setModal(null)}>
+            <p className="mb-2 text-[13px] text-zinc-600">Deadline đã chốt (<b>{fmtDFull(r.agreedDeadline)}</b>) <b>vẫn giữ nguyên</b> cho tới khi bên kia đồng ý.</p>
+            <Field label="Deadline mới" req><input type="date" className={inputCls} value={modal.deadline} onChange={(e) => setModal({ ...modal, deadline: e.target.value })} /></Field>
+            <Field label="Lý do" req><textarea className={inputCls} rows={2} value={modal.reason} onChange={(e) => setModal({ ...modal, reason: e.target.value })} /></Field>
+            <Field label="Tác động"><input className={inputCls} value={modal.impact} onChange={(e) => setModal({ ...modal, impact: e.target.value })} placeholder="VD: lùi lịch quay 1 ngày" /></Field>
+            <div className="flex justify-end gap-2"><button className={btnSec} onClick={() => setModal(null)}>Hủy</button><button className={btnPri} disabled={!modal.deadline || !modal.reason.trim()} onClick={() => { act.reqAction(r.id, "proposeDeadlineChange", { deadline: modal.deadline, reason: modal.reason.trim(), impact: modal.impact.trim() }); setModal(null); toast("Đã gửi đề xuất đổi deadline"); }}>Gửi đề xuất</button></div>
+          </Modal>
+        )}
+        {modal?.type === "ceo" && (
+          <Modal title="CEO điều chỉnh deadline trực tiếp" onClose={() => setModal(null)}>
+            <p className="mb-2 text-[13px] text-rose-600">Chỉ dùng trong tình huống khẩn. Sẽ ghi audit và báo cả hai phòng.</p>
+            <Field label="Deadline mới" req><input type="date" className={inputCls} value={modal.deadline} onChange={(e) => setModal({ ...modal, deadline: e.target.value })} /></Field>
+            <div className="grid grid-cols-2 gap-x-3">
+              <Field label="Mức khẩn cấp"><select className={inputCls} value={modal.urgency} onChange={(e) => setModal({ ...modal, urgency: e.target.value })}>{["high", "critical"].map((u) => <option key={u} value={u}>{u === "critical" ? "Cực khẩn" : "Khẩn"}</option>)}</select></Field>
+              <Field label="Tác động"><input className={inputCls} value={modal.impact} onChange={(e) => setModal({ ...modal, impact: e.target.value })} /></Field>
+            </div>
+            <Field label="Lý do (bắt buộc)" req><textarea className={inputCls} rows={2} value={modal.reason} onChange={(e) => setModal({ ...modal, reason: e.target.value })} /></Field>
+            <div className="flex justify-end gap-2"><button className={btnSec} onClick={() => setModal(null)}>Hủy</button><button className={btnPri} disabled={!modal.deadline || !modal.reason.trim()} onClick={() => { act.reqAction(r.id, "ceoOverride", { deadline: modal.deadline, reason: modal.reason.trim(), urgency: modal.urgency, impact: modal.impact.trim() }); setModal(null); toast("CEO đã điều chỉnh deadline — đã báo 2 phòng"); }}>Điều chỉnh & thông báo</button></div>
           </Modal>
         )}
       </div>
@@ -3765,17 +3926,21 @@ const runAlerts = (dbx) => {
     if (escalateLead && lead && lead.id !== t.ownerId) push(lead.id, safe ? `Một công việc bảo mật trong phòng ${label}.` : `[Phòng ${deptById(dbx, t.deptId)?.name}] ${t.name} ${label}`, { taskId: t.id }, dl < 0 ? "urgent" : "info");
     if (t.priority === "urgent" && dl <= -3) push(dbx.users.find((u) => u.role === "ceo")?.id, safe ? `Một công việc bảo mật khẩn cấp quá hạn nhiều ngày.` : `KHẨN quá hạn ${-dl} ngày: ${t.name}`, { taskId: t.id }, "urgent");
   });
-  /* Request chưa tiếp nhận quá SLA 2 ngày → nhắc người nhận + escalate leader/admin; urgent → CEO */
-  dbx.requests.filter((r) => r.status === "pending" && Date.now() - r.createdAt > 2 * DAY).forEach((r) => {
-    const key = `${r.id}:sla`;
+  /* Request quá SLA → escalation theo tầng: L1 đầu mối · L2 leader 2 phòng · L3 CEO.
+     CEO chỉ nhận khi Level 3 (nghiêm trọng / khẩn / thuộc project trọng điểm). */
+  dbx.requests.filter((r) => !r.deleted && !["confirmed", "rejected", "cancelled"].includes(r.status)).forEach((r) => {
+    const sla = computeRequestSla(dbx, r);
+    const esc = escalationLevel(dbx, r, sla);
+    if (esc < 1) return;
+    const key = `${r.id}:esc${esc}:${r.status}`;
     if (sent[key]) return;
     sent[key] = Date.now();
-    const rcv = deptReceiverId(dbx, r.toDeptId);
-    push(rcv, `Yêu cầu chưa tiếp nhận quá ${Math.floor((Date.now() - r.createdAt) / DAY)} ngày: ${r.title}`, { requestId: r.id }, "urgent");
-    const lead = deptLeader(dbx, r.toDeptId);
-    const admin = dbx.users.find((u) => u.role === "admin");
-    push((lead || admin)?.id !== rcv ? (lead || admin)?.id : null, `[SLA] Phòng ${deptById(dbx, r.toDeptId)?.name} chưa tiếp nhận: ${r.title}`, { requestId: r.id }, "urgent");
-    if (r.priority === "urgent") push(dbx.users.find((u) => u.role === "ceo")?.id, `[SLA] Yêu cầu KHẨN bị tắc: ${r.title}`, { requestId: r.id }, "urgent");
+    const rcv = r.handlerId || r.receiverId || deptReceiverId(dbx, r.toDeptId);
+    const leadFrom = deptLeader(dbx, r.fromDeptId), leadTo = deptLeader(dbx, r.toDeptId);
+    const msg = `[SLA ${sla.phaseLabel}] ${r.title} — ${SLA_LEVELS[sla.level].label}`;
+    push(rcv, msg, { requestId: r.id }, esc >= 2 ? "urgent" : "act");
+    if (esc >= 2) { if (leadFrom && leadFrom.id !== rcv) push(leadFrom.id, msg, { requestId: r.id }, "urgent"); if (leadTo && leadTo.id !== rcv) push(leadTo.id, msg, { requestId: r.id }, "urgent"); }
+    if (esc >= 3) push(dbx.users.find((u) => u.role === "ceo")?.id, `[Level 3] ${r.title} — ${sla.phaseLabel} ${SLA_LEVELS[sla.level].label}`, { requestId: r.id }, "urgent");
   });
   return { ...next, sentAlerts: sent };
 };
@@ -4141,7 +4306,7 @@ export default function App() {
       const finalize = (dbx, rx, deadline, handlerId) => {
         /* 2 bên đã thống nhất — ghi agreedDeadline + tạo task liên phòng ban */
         const taskId = uid("t");
-        let d2 = mapReq(dbx, id, (x) => log({ ...x, status: "accepted", receiverId: x.receiverId || meId, handlerId, agreedDeadline: deadline, taskId }, `hai bên chốt deadline ${fmtDFull(deadline)} — yêu cầu được tiếp nhận`));
+        let d2 = mapReq(dbx, id, (x) => log({ ...x, status: "accepted", receiverId: x.receiverId || meId, handlerId, agreedDeadline: deadline, receivedAt: x.receivedAt || Date.now(), taskId }, `hai bên chốt deadline ${fmtDFull(deadline)} — yêu cầu được tiếp nhận`));
         const nt = { id: taskId, code: nextTaskCode(d2), brandId: r.brandId || null, name: `[Phối hợp] ${r.title}`, desc: r.content, deliverable: r.deliverable, acceptance: "", creatorId: meId, assignerId: meId, ownerId: handlerId, collaboratorIds: [r.fromUserId], approverId: r.fromUserId, deptId: r.toDeptId, coDeptIds: [r.fromDeptId], projectId: null, type: "cross", priority: r.priority, start: todayISO(), deadline, status: "todo", progress: 0, effort: "M", checklist: [], reportLink: "", driveLink: "", attachments: [], tags: ["phoi-hop"], comments: [], logs: [{ id: uid("l"), userId: meId, at: Date.now(), text: `tạo tự động từ yêu cầu ${r.code}`, action: "create" }], pauseReason: "", overdueReason: "", revisionCount: 0, revisionNote: "", completedAt: null, confirmedById: null, approvedAt: null, recurrence: null, pinnedBy: [], createdAt: Date.now(), updatedAt: Date.now(), deadlineConfirmed: true, deadlineHistory: [], visibility: "department", isConfidential: false, allowedViewerIds: [], confidentialReason: "", category: "GENERAL", locked: false, requiresAck: false, ackedAt: null, actual: { summary: "", links: [], note: "", submittedAt: null } };
         d2 = { ...d2, tasks: [nt, ...d2.tasks] };
         if (handlerId) d2 = notify(d2, handlerId, `Bạn phụ trách xử lý yêu cầu: ${r.title} · hạn ${fmtDFull(deadline)}`, { taskId }, "act");
@@ -4154,7 +4319,7 @@ export default function App() {
           next = notify(next, r.fromUserId, `${deptById(prev, r.toDeptId)?.name} đã tiếp nhận: ${r.title}`, { requestId: id });
         } else {
           /* đề xuất deadline mới → chờ bên gửi xác nhận, CHƯA tạo task, CHƯA ghi agreedDeadline */
-          next = mapReq(prev, id, (x) => log({ ...x, status: "deadline_proposed", receiverId: meId, pendingHandlerId: payload.handlerId, deadlineProposals: [...x.deadlineProposals, { by: meId, side: "receiver", date: payload.deadline, at: Date.now() }] }, `đề xuất deadline mới ${fmtDFull(payload.deadline)} (đề xuất ban đầu: ${fmtDFull(r.proposedDeadline)})`));
+          next = mapReq(prev, id, (x) => log({ ...x, status: "deadline_proposed", receiverId: meId, receivedAt: x.receivedAt || Date.now(), pendingHandlerId: payload.handlerId, deadlineProposals: [...x.deadlineProposals, { by: meId, side: "receiver", date: payload.deadline, at: Date.now() }] }, `đề xuất deadline mới ${fmtDFull(payload.deadline)} (đề xuất ban đầu: ${fmtDFull(r.proposedDeadline)})`));
           next = notify(next, r.fromUserId, `${deptById(prev, r.toDeptId)?.name} đề xuất deadline mới cho: ${r.title} → ${fmtDFull(payload.deadline)}`, { requestId: id }, "act");
         }
       }
@@ -4177,7 +4342,7 @@ export default function App() {
         const other = side === "sender" ? (r.receiverId || deptReceiverId(prev, r.toDeptId)) : r.fromUserId;
         next = notify(next, other, `Đề xuất deadline mới cho: ${r.title} → ${fmtDFull(payload.deadline)}`, { requestId: id }, "act");
       }
-      if (action === "info") { next = mapReq(prev, id, (x) => log({ ...x, status: "info" }, `cần bổ sung: ${payload.note}`)); next = notify(next, r.fromUserId, `Cần bổ sung thông tin: ${r.title}`, { requestId: id }, "act"); }
+      if (action === "info") { next = mapReq(prev, id, (x) => log({ ...x, status: "info", receivedAt: x.receivedAt || Date.now() }, `cần bổ sung: ${payload.note}`)); next = notify(next, r.fromUserId, `Cần bổ sung thông tin: ${r.title}`, { requestId: id }, "act"); }
       if (action === "resend") {
         if (!isSenderAuthorized(prev, me, r)) return prev;
         next = mapReq(prev, id, (x) => log({ ...x, status: "pending" }, "đã bổ sung thông tin, gửi lại"));
@@ -4193,14 +4358,21 @@ export default function App() {
           const hasActual = linkedTask.actual?.summary?.trim() && (linkedTask.actual.links?.length > 0 || linkedTask.attachments?.length > 0);
           if (!hasActual) { toast("Cần Kết quả thực tế đầy đủ (tóm tắt + link/file) trong task trước khi bàn giao", "warn"); return prev; }
         }
-        next = mapReq(prev, id, (x) => log({ ...x, status: "delivered" }, "bàn giao kết quả"));
+        next = mapReq(prev, id, (x) => log({ ...x, status: "delivered", deliveredAt: Date.now() }, "bàn giao kết quả"));
         if (r.taskId) next = { ...next, tasks: next.tasks.map((t) => t.id === r.taskId && !["done", "review"].includes(t.status) ? { ...t, status: "review" } : t) };
         next = notify(next, r.fromUserId, `Đã bàn giao, chờ bạn xác nhận: ${r.title}`, { requestId: id }, "act");
+      }
+      /* Bên gửi yêu cầu chỉnh sửa sau khi đã bàn giao → Request revise, Task quay lại chỉnh sửa (dùng chung, không lệch) */
+      if (action === "revise") {
+        if (!isSenderAuthorized(prev, me, r)) return prev;
+        next = mapReq(prev, id, (x) => log({ ...x, status: "revise" }, `yêu cầu chỉnh sửa: ${payload.note || "(không ghi chú)"}`));
+        if (r.taskId) next = { ...next, tasks: next.tasks.map((t) => t.id === r.taskId ? withLog({ ...t, status: "revise", revisionCount: (t.revisionCount || 0) + 1, revisionNote: payload.note || "" }, meId, `bên gửi yêu cầu chỉnh sửa qua yêu cầu ${r.code}`, { action: "revise" }) : t) };
+        if (r.handlerId) next = notify(next, r.handlerId, `Bên gửi yêu cầu chỉnh sửa: ${r.title}`, { requestId: id }, "act");
       }
       if (action === "confirm") {
         /* Chỉ bên gửi có thẩm quyền (người tạo/leader phòng gửi/authorized) mới xác nhận hoàn thành */
         if (!isSenderAuthorized(prev, me, r)) return prev;
-        next = mapReq(prev, id, (x) => log({ ...x, status: "confirmed" }, "xác nhận hoàn thành, đóng yêu cầu"));
+        next = mapReq(prev, id, (x) => log({ ...x, status: "confirmed", confirmedAt: Date.now() }, "xác nhận hoàn thành, đóng yêu cầu"));
         if (r.taskId) next = { ...next, tasks: next.tasks.map((t) => t.id === r.taskId && t.status !== "done" ? withLog({ ...t, status: "done", progress: 100, completedAt: Date.now(), approvedAt: Date.now(), locked: !!t.approverId, confirmedById: meId }, meId, "bên gửi xác nhận hoàn thành yêu cầu — task đóng", { action: "approve" }) : t) };
         if (r.handlerId) next = notify(next, r.handlerId, `Bên gửi đã xác nhận hoàn thành: ${r.title}`, { requestId: id });
       }
@@ -4213,6 +4385,39 @@ export default function App() {
           const tk = prev.tasks.find((t) => t.id === r.taskId);
           if (tk?.ownerId) next = notify(next, tk.ownerId, `Yêu cầu ${r.code} bị hủy — task liên quan đã tạm dừng`, { taskId: r.taskId }, "act");
         }
+      }
+      /* ===== Đổi deadline SAU KHI đã chốt: không sửa trực tiếp — phải qua đề xuất + bên kia duyệt ===== */
+      const onRecvSide = isReceiverFor(prev, me, r.toDeptId) || r.receiverId === meId || r.handlerId === meId;
+      const onSendSide = isSenderAuthorized(prev, me, r);
+      if (action === "proposeDeadlineChange") {
+        if (!["accepted", "processing", "revise"].includes(r.status)) { toast("Chỉ đổi được khi yêu cầu đã tiếp nhận", "warn"); return prev; }
+        if (!(onRecvSide || onSendSide)) { toast("Bạn không thuộc hai phòng của yêu cầu này", "warn"); return prev; }
+        const side = onRecvSide && !onSendSide ? "receiver" : "sender";
+        next = mapReq(prev, id, (x) => log({ ...x, deadlineChange: { proposedDeadline: payload.deadline, by: meId, side, reason: payload.reason || "", impact: payload.impact || "", at: Date.now(), status: "pending" } }, `đề xuất ĐỔI deadline: ${fmtDFull(r.agreedDeadline)} → ${fmtDFull(payload.deadline)}${payload.reason ? ` — ${payload.reason}` : ""}`));
+        const other = side === "receiver" ? r.fromUserId : (r.handlerId || r.receiverId || deptReceiverId(prev, r.toDeptId));
+        next = notify(next, other, `Đề xuất đổi deadline cho: ${r.title} → ${fmtDFull(payload.deadline)} (deadline cũ vẫn giữ tới khi bạn duyệt)`, { requestId: id }, "act");
+      }
+      if (action === "approveDeadlineChange" || action === "rejectDeadlineChange") {
+        const dc = r.deadlineChange; if (!dc || dc.status !== "pending") return prev;
+        const canDecide = dc.side === "receiver" ? (onSendSide || isMgr(me)) : (onRecvSide || isMgr(me));
+        if (!canDecide) { toast("Chờ bên kia duyệt đổi deadline", "warn"); return prev; }
+        const old = r.agreedDeadline;
+        if (action === "approveDeadlineChange") {
+          next = mapReq(prev, id, (x) => log({ ...x, agreedDeadline: dc.proposedDeadline, deadlineChange: { ...dc, status: "approved", resolvedAt: Date.now(), resolvedBy: meId } }, `duyệt đổi deadline: ${fmtDFull(old)} → ${fmtDFull(dc.proposedDeadline)}`));
+          if (r.taskId) next = { ...next, tasks: next.tasks.map((t) => t.id === r.taskId ? withLog({ ...t, deadline: dc.proposedDeadline, deadlineHistory: [...t.deadlineHistory, { from: old, to: dc.proposedDeadline, by: meId, at: Date.now(), reason: dc.reason || "đổi deadline yêu cầu" }] }, meId, `đổi deadline theo yêu cầu ${r.code}: ${fmtDFull(old)} → ${fmtDFull(dc.proposedDeadline)}`, { action: "deadline" }) : t) };
+          next = notify(next, dc.by, `Đổi deadline đã được duyệt: ${r.title} → ${fmtDFull(dc.proposedDeadline)}`, { requestId: id });
+        } else {
+          next = mapReq(prev, id, (x) => log({ ...x, deadlineChange: { ...dc, status: "rejected", resolvedAt: Date.now(), resolvedBy: meId } }, `từ chối đổi deadline (giữ ${fmtDFull(old)})`));
+          next = notify(next, dc.by, `Đề xuất đổi deadline bị từ chối: ${r.title}`, { requestId: id }, "act");
+        }
+      }
+      /* ===== CEO Override: điều chỉnh trực tiếp trong tình huống khẩn — bắt buộc lý do + ghi audit + báo 2 phòng ===== */
+      if (action === "ceoOverride") {
+        if (me.role !== "ceo") { toast("Chỉ CEO được điều chỉnh trực tiếp", "warn"); return prev; }
+        const old = r.agreedDeadline;
+        next = mapReq(prev, id, (x) => log({ ...x, agreedDeadline: payload.deadline, deadlineChange: null, ceoOverride: { by: meId, at: Date.now(), reason: payload.reason || "", urgency: payload.urgency || "high", impact: payload.impact || "", oldDeadline: old } }, `CEO điều chỉnh deadline trực tiếp: ${fmtDFull(old)} → ${fmtDFull(payload.deadline)} — ${payload.reason || ""}`));
+        if (r.taskId) next = { ...next, tasks: next.tasks.map((t) => t.id === r.taskId ? withLog({ ...t, deadline: payload.deadline, deadlineHistory: [...t.deadlineHistory, { from: old, to: payload.deadline, by: meId, at: Date.now(), reason: `CEO override: ${payload.reason || ""}` }] }, meId, `CEO điều chỉnh deadline trực tiếp qua yêu cầu ${r.code}`, { action: "deadline" }) : t) };
+        [r.fromUserId, r.handlerId, r.receiverId, deptLeader(prev, r.fromDeptId)?.id, deptLeader(prev, r.toDeptId)?.id].filter(Boolean).forEach((u2) => { next = notify(next, u2, `CEO điều chỉnh deadline trực tiếp: ${r.title} → ${fmtDFull(payload.deadline)}`, { requestId: id }, "urgent"); });
       }
       return next;
     }),
@@ -4423,7 +4628,7 @@ export default function App() {
 }
 
 /* Export nội bộ phục vụ unit test (không dùng trong UI) */
-export const __internals = { buildSeed, perms, runScheduler, runAlerts, occursToday, canManage, canCreateTaskFor, canApplyTaskPatch, assignableUsers, canViewProject, canViewRequest, canViewDoc, deptReceiverId, isReceiverFor, userById, deptById, getEligibleApprovers, isSenderAuthorized, APPROVER_RULES, TASK_FIELD_PERM, TASK_FIELD_FORBIDDEN, computeProjectHealth, milestoneProgress, weightedTaskProgress, msOverdue, msDueSoon, projBrand };
+export const __internals = { buildSeed, perms, runScheduler, runAlerts, occursToday, canManage, canCreateTaskFor, canApplyTaskPatch, assignableUsers, canViewProject, canViewRequest, canViewDoc, deptReceiverId, isReceiverFor, userById, deptById, getEligibleApprovers, isSenderAuthorized, APPROVER_RULES, TASK_FIELD_PERM, TASK_FIELD_FORBIDDEN, computeProjectHealth, milestoneProgress, weightedTaskProgress, msOverdue, msDueSoon, projBrand, computeRequestSla, escalationLevel, SLA_HOURS };
 /* ============================================================
    HR WORKSPACE — quy trình nhân sự dựa trên task
    Phạm vi: onboarding, thử việc, đào tạo, hồ sơ, offboarding,
