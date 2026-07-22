@@ -1600,6 +1600,7 @@ function ActualOutputBox({ t }) {
   const [link, setLink] = useState("");
   const a = t.actual || { summary: "", links: [], note: "", submittedAt: null };
   const filled = a.summary?.trim() && (a.links.length > 0 || t.attachments.length > 0 || t.type === "personal");
+  const needsApprovalHint = !!t.approverId;
   return (
     <div className={`mb-4 rounded-xl border p-3 ${filled ? "border-emerald-100 bg-emerald-50/40" : "border-zinc-200 bg-zinc-50/60"}`}>
       <div className="flex items-center justify-between mb-1.5">
@@ -1615,7 +1616,8 @@ function ActualOutputBox({ t }) {
             ))}
           </div>
           <div className="mt-1.5 flex gap-2">
-            <input className={inputCls} placeholder="Dán link kết quả (Drive, Docs…) rồi Enter" value={link} onChange={(e) => setLink(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && link.trim()) { act.updateActual(t.id, { links: [...a.links, link.trim()] }); setLink(""); } }} />
+            <input className={inputCls} placeholder="Dán link kết quả (Drive, Docs…)" value={link} onChange={(e) => setLink(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && link.trim()) { act.updateActual(t.id, { links: [...a.links, link.trim()] }); setLink(""); } }} onBlur={() => { if (link.trim()) { act.updateActual(t.id, { links: [...a.links, link.trim()] }); setLink(""); } }} />
+            <button className={btnSec} disabled={!link.trim()} onClick={() => { act.updateActual(t.id, { links: [...a.links, link.trim()] }); setLink(""); }}><Plus className="h-4 w-4" />Thêm</button>
           </div>
           {t.requiresAck && (
             <label className="mt-2 flex items-center gap-2 text-[13px] text-zinc-700">
@@ -1623,7 +1625,16 @@ function ActualOutputBox({ t }) {
               Tôi xác nhận đã đọc và hiểu tài liệu{t.ackedAt ? ` · ${fmtDT(t.ackedAt)}` : ""}
             </label>
           )}
-          {!filled && <p className="mt-1.5 text-[11px] text-amber-600">Chưa đủ điều kiện bàn giao: cần tóm tắt + ít nhất 1 link hoặc file. Ghi kỳ vọng không được tính là đã bàn giao.</p>}
+          {!filled && (
+            <p className="mt-1.5 text-[11px] text-amber-600">
+              {!a.summary?.trim()
+                ? "Thiếu Tóm tắt kết quả (ô trên cùng) — bắt buộc."
+                : link.trim()
+                  ? "Bạn vừa dán link nhưng chưa thêm — bấm nút Thêm (hoặc Enter) để đưa link vào kết quả."
+                  : "Cần ít nhất 1 link hoặc file đính kèm. Dán link rồi bấm Thêm."}
+            </p>
+          )}
+          {filled && <p className="mt-1.5 text-[11px] text-emerald-600">Đủ điều kiện bàn giao — bấm “Gửi duyệt” ở đầu form{needsApprovalHint ? "" : " hoặc chuyển trạng thái sang Hoàn thành"}.</p>}
         </>
       ) : (
         <>
