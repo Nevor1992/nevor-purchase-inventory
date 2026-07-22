@@ -26,9 +26,10 @@ export const projectFromRow = (r) => ({
   managerId: r.manager_id || null,
   deptIds: r.dept_ids || [], watcherIds: r.watcher_ids || [], brandId: r.brand_id,
   start: r.start_date, deadline: r.deadline, forecastDeadline: r.forecast_deadline || null,
-  status: r.status, priority: r.priority || "normal",
+  status: r.status, priority: r.priority || "normal", budgetReference: r.budget_reference || "",
   desc: r.description || "", planLink: r.plan_link || "", issues: r.issues || [],
-  milestones: r.milestones || [], decisions: r.decisions || [], deleted: r.deleted === true,
+  milestones: r.milestones || [], decisions: r.decisions || [],
+  members: r.members || [], changeRequests: r.change_requests || [], deleted: r.deleted === true,
 });
 
 export const projectToRow = (p) => ({
@@ -37,7 +38,9 @@ export const projectToRow = (p) => ({
   dept_ids: p.deptIds || [], watcher_ids: p.watcherIds || [], brand_id: p.brandId || null,
   start_date: p.start || null, deadline: p.deadline || null, forecast_deadline: p.forecastDeadline || null,
   status: p.status, priority: p.priority || "normal", description: p.desc || "", plan_link: p.planLink || "",
-  issues: p.issues || [], milestones: p.milestones || [], decisions: p.decisions || [], deleted: !!p.deleted,
+  budget_reference: p.budgetReference || null,
+  issues: p.issues || [], milestones: p.milestones || [], decisions: p.decisions || [],
+  members: p.members || [], change_requests: p.changeRequests || [], deleted: !!p.deleted,
 });
 
 /* ---------------- tasks (+ sub-tables assembled in) ---------------- */
@@ -60,6 +63,7 @@ export const taskFromRow = (r, { checklist = [], collaboratorIds = [], attachmen
   actual: { summary: r.actual_summary || "", links: r.actual_links || [], note: r.actual_note || "", submittedAt: ts(r.actual_submitted_at) },
   confirmedById: r.confirmed_by_id, recurrence: r.recurrence,
   recurringTemplateId: r.recurrence_template_id, recurrencePeriod: r.recurrence_period,
+  dependsOnTaskIds: r.depends_on_task_ids || [],
   deleted: r.deleted === true, createdAt: ts(r.created_at), updatedAt: ts(r.updated_at),
   /* sub-tables */
   checklist: checklist.map((c) => ({ id: c.id, text: c.text, done: c.done, ownerId: c.owner_id, deadline: c.deadline || null })),
@@ -90,6 +94,7 @@ export const taskToRow = (t) => ({
   actual_note: t.actual?.note || null, actual_submitted_at: iso(t.actual?.submittedAt),
   confirmed_by_id: t.confirmedById || null, recurrence: t.recurrence || null,
   recurrence_template_id: t.recurringTemplateId || null, recurrence_period: t.recurrencePeriod || null,
+  depends_on_task_ids: t.dependsOnTaskIds || [],
   deleted: !!t.deleted,
 });
 
