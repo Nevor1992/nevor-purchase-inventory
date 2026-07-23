@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:demo": "vite build --config vite.config.demo.js",
+    "build:purchase-demo": "vite build --config vite.config.purchase-demo.js",
     "preview": "vite preview",
     "lint": "eslint src --ext .js,.jsx --report-unused-disable-directives",
     "test": "vitest run",
@@ -16,8 +17,11 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.110.7",
     "lucide-react": "^0.344.0",
+    "papaparse": "^5.4.1",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "recharts": "^2.12.7",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.4.2",

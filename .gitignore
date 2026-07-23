@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-demo/
+dist-purchase-demo/
 .env
 .env.local
 .env.*.local
