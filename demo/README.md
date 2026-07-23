@@ -66,3 +66,37 @@ npm run build:purchase-demo
 File `demo/novix-purchase-inventory-demo.html` là bản build sẵn để chia sẻ nhanh.
 Sau khi chỉnh `demo/purchase-inventory/App.jsx`, chạy lại lệnh trên rồi chép
 `dist-purchase-demo/index.html` đè lên file demo đó.
+
+## 6. Deploy demo lên Vercel (URL cho nhân sự truy cập online)
+
+Demo chạy như **project Vercel riêng**, tách biệt hoàn toàn với app chính
+(`vercel.json` ở gốc vẫn deploy app chính — không bị đụng). Config demo nằm ở
+`vercel.demo.json`:
+
+```json
+{ "framework": "vite", "buildCommand": "npm run build:purchase-demo", "outputDirectory": "dist-purchase-demo" }
+```
+
+### Cách 1 — Vercel Dashboard (khuyến nghị, ~1 phút)
+1. Vào https://vercel.com → **Add New… → Project** → **Import** repo
+   `Nevor1992/nevor-purchase-inventory`.
+2. Ở màn hình cấu hình, mở **Build & Output Settings** và **Override**:
+   - **Build Command**: `npm run build:purchase-demo`
+   - **Output Directory**: `dist-purchase-demo`
+   - Install Command để mặc định `npm install`.
+3. (Tuỳ chọn) **Settings → Git → Production Branch**: đặt
+   `claude/demo-file-hr-y4tuth` nếu muốn deploy nhánh này; hoặc merge vào nhánh chính.
+4. Bấm **Deploy** → nhận URL dạng `https://<tên-project>.vercel.app` để gửi nhân sự.
+
+> Đặt tên project khác app chính (vd `nevor-purchase-inventory-demo`) để có URL riêng.
+
+### Cách 2 — Vercel CLI (deploy bản tĩnh đã build sẵn)
+```bash
+npm install
+npm run build:purchase-demo          # → dist-purchase-demo/index.html
+npx vercel deploy dist-purchase-demo --prod
+# Lần đầu: CLI hỏi đăng nhập + chọn scope + đặt tên project. Xong là có URL.
+```
+
+Vì demo là **HTML tĩnh tự chứa** (không backend), deploy rất nhẹ, không cần
+cấu hình env var nào trên Vercel.
