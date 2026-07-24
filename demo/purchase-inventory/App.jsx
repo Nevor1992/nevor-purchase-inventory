@@ -720,6 +720,33 @@ const PO_MC_SEED=[
   {id:"NV000165",date:_D(-2),sku:"BM01",supplier:"NCC nội địa VN (DEMO)",ccy:"VND",qty:1000,unitPrice:9000,shipForeign:0,fx:1,moldFee:0,depositPct:0,depositDue:null,finalDue:_D(3),payMethod:"Chuyển khoản",depositPaid:false,finalPaid:false,status:"Ordered",lc:{shipVN:0,trustPct:0,box:0,manual:0,otherPack:0,labor:400,vatPct:0.08,other:0}},
 ];
 
+/* ═══ #3 Đền bù · #5 Đóng gói/PO song ngữ · #6 Mùa vụ — bổ sung từ file thu mua thật ═══ */
+const CLAIM_REASONS=["NCC phát thiếu","Hàng lỗi","ĐVVC làm mất/hư","Sàn báo lỗi","Giao sai mẫu","Khác"];
+const CLAIM_PARTIES=["NCC","Đơn vị vận chuyển","Sàn TMĐT","Nội bộ"];
+const CLAIM_STATUS=["Đã tiếp nhận","Đã báo NCC/ĐVVC","Chờ phản hồi","Đã đền bù","Từ chối","Đóng"];
+const CLAIM_ST_C={"Đã tiếp nhận":{c:"#6B7280",bg:"#F3F4F6"},"Đã báo NCC/ĐVVC":{c:"#2563EB",bg:"#DBEAFE"},"Chờ phản hồi":{c:"#D97706",bg:"#FEF3C7"},"Đã đền bù":{c:"#065F46",bg:"#D1FAE5"},"Từ chối":{c:"#fff",bg:"#DC2626"},"Đóng":{c:"#6B7280",bg:"#E5E7EB"}};
+const CLAIMS_SEED=[
+ {id:"DB-001",orderId:"NV000094",sku:"BDG14",date:_D(-40),qty:1,reason:"ĐVVC làm mất/hư",party:"Đơn vị vận chuyển",value:100000,status:"Đã đền bù",note:"Trừ vào công nợ ĐVVC"},
+ {id:"DB-002",orderId:"NV000104",sku:"BDG12",date:_D(-25),qty:120,reason:"NCC phát thiếu",party:"NCC",value:0,status:"Đã tiếp nhận",note:"NCC giao thiếu 120 cái, đang đối chiếu công nợ"},
+ {id:"DB-003",orderId:"NV000101-1",sku:"DCG04",date:_D(-12),qty:60,reason:"Hàng lỗi",party:"NCC",value:9600000,status:"Chờ phản hồi",note:"Lỗi đường may — đã gửi ảnh cho NCC"},
+ {id:"DB-004",orderId:"NV000131",sku:"DTL02",date:_D(-6),qty:40,reason:"Sàn báo lỗi",party:"Sàn TMĐT",value:1400000,status:"Đã báo NCC/ĐVVC",note:"Khách phản hồi lỗi khoá dán"},
+];
+const PACK_SEED=[
+ {sku:"BDG12",nameCn:"护膝 BDG12 黑橙/黑蓝",moq:25,pack:"Đóng túi zip mờ, 25 cái/túi; thùng carton 5 lớp; kèm tem Nevor",supplier:"双星体育用品（江苏）有限公司",contact:"18921940999"},
+ {sku:"DCG03",nameCn:"防驼背矫正带 DCG03",moq:25,pack:"Túi OPP + hộp nắp cài Nevor; kèm giấy HDSD; chống ẩm",supplier:"双星体育用品（江苏）有限公司",contact:"18921940999"},
+ {sku:"BDG14",nameCn:"护膝 BDG14",moq:30,pack:"Túi zip; NCC báo SL/thùng; kèm tem Nevor",supplier:"宁波晨东运动保健用品有限公司",contact:"15888567828"},
+ {sku:"DCG04",nameCn:"防驼背矫正带 DCG04",moq:30,pack:"Hộp nắp cài Nevor; giấy HDSD; túi chống ẩm",supplier:"石家庄润益医疗",contact:""},
+];
+/* Tốc độ bán theo tháng (Sp/ngày) — nền cho phân tích mùa vụ (giống sheet DOANH SỐ 2026) */
+const VELO_SEED={
+ DCG04:[{m:"02/26",v:70},{m:"03/26",v:78},{m:"04/26",v:92},{m:"05/26",v:110},{m:"06/26",v:132},{m:"07/26",v:145}],
+ BDG12:[{m:"02/26",v:120},{m:"03/26",v:118},{m:"04/26",v:105},{m:"05/26",v:99},{m:"06/26",v:96},{m:"07/26",v:92}],
+ DCG03:[{m:"02/26",v:12},{m:"03/26",v:14},{m:"04/26",v:16},{m:"05/26",v:15},{m:"06/26",v:17},{m:"07/26",v:19}],
+ PHAV05:[{m:"02/26",v:90},{m:"03/26",v:120},{m:"04/26",v:150},{m:"05/26",v:140},{m:"06/26",v:130},{m:"07/26",v:151}],
+ TCN02:[{m:"02/26",v:600},{m:"03/26",v:700},{m:"04/26",v:820},{m:"05/26",v:780},{m:"06/26",v:850},{m:"07/26",v:893}],
+};
+const SEASON_SEED={DCG04:1.15,BDG12:0.9,DCG03:1.05,PHAV05:1.2,TCN02:1.1};
+
 export default function App(){
   const [tab,setTab]=useState("data");
   const [role,setRole]=useState("CEO");
@@ -750,6 +777,9 @@ export default function App(){
   const [supplierSku,setSupplierSku]=useState(SUP_SKU_SEED);
   const [poList,setPoList]=useState(PO_SEED);
   const [purchaseOrders,setPurchaseOrders]=useState(PO_MC_SEED);   // đơn mua đa tiền tệ (CPMH)
+  const [claims,setClaims]=useState(CLAIMS_SEED);                  // #3 sổ đền bù NCC/ĐVVC
+  const [packSpecs,setPackSpecs]=useState(PACK_SEED);              // #5 quy cách đóng gói theo SKU
+  const [trendFactors,setTrendFactors]=useState(SEASON_SEED);     // #6 hệ số mùa vụ theo SKU
   const [salesPlans,setSalesPlans]=useState(PLAN_SEED);
   const [campaigns,setCampaigns]=useState(CAMPAIGN_SEED);
   const [boms,setBoms]=useState(BOM_SEED);
@@ -798,6 +828,9 @@ export default function App(){
       if(data.supplierSku)setSupplierSku(data.supplierSku);
       if(data.poList)setPoList(data.poList);
       if(data.purchaseOrders)setPurchaseOrders(data.purchaseOrders);
+      if(data.claims)setClaims(data.claims);
+      if(data.packSpecs)setPackSpecs(data.packSpecs);
+      if(data.trendFactors)setTrendFactors(data.trendFactors);
       if(data.salesPlans)setSalesPlans(data.salesPlans);
       if(data.campaigns)setCampaigns(data.campaigns);
       if(data.boms)setBoms(data.boms);
@@ -815,11 +848,11 @@ export default function App(){
   useEffect(()=>{if(!loaded)return;let alive=true;
     setSaveInfo(s=>({...s,st:"saving"}));
     (async()=>{
-      const via=await saveState({cfg,skuMeta,prList,snapshots,ledger,receipts,budgets,reconAlerts,suppliers,supplierSku,poList,salesPlans,campaigns,boms,purchaseOrders,posImports:posImports.slice(0,60),mappingQueue,allocOverrides,fcstLog:fcstLog.slice(0,600),posMap,rowOv,auditLog:auditLog.slice(0,400),lastSync});
+      const via=await saveState({cfg,skuMeta,prList,snapshots,ledger,receipts,budgets,reconAlerts,suppliers,supplierSku,poList,salesPlans,campaigns,boms,purchaseOrders,claims,packSpecs,trendFactors,posImports:posImports.slice(0,60),mappingQueue,allocOverrides,fcstLog:fcstLog.slice(0,600),posMap,rowOv,auditLog:auditLog.slice(0,400),lastSync});
       if(alive)setSaveInfo({st:via?"saved":"error",via:via||""});
     })();
     return ()=>{alive=false;};
-  },[cfg,skuMeta,prList,snapshots,ledger,receipts,budgets,reconAlerts,suppliers,supplierSku,poList,salesPlans,campaigns,boms,purchaseOrders,posImports,mappingQueue,allocOverrides,fcstLog,posMap,rowOv,auditLog,lastSync,loaded]);
+  },[cfg,skuMeta,prList,snapshots,ledger,receipts,budgets,reconAlerts,suppliers,supplierSku,poList,salesPlans,campaigns,boms,purchaseOrders,claims,packSpecs,trendFactors,posImports,mappingQueue,allocOverrides,fcstLog,posMap,rowOv,auditLog,lastSync,loaded]);
 
   const addLog=(entityType,entityId,action,detail,before,after,reason)=>setAuditLog(p=>[{
     id:Date.now()+Math.random(),timestamp:new Date().toISOString(),user:role,role,
@@ -1107,6 +1140,9 @@ export default function App(){
   const [mergePoModal,setMergePoModal]=useState(null);
   const [cfgModal,setCfgModal]=useState(false); const [cfgForm,setCfgForm]=useState({});
   const [poMcForm,setPoMcForm]=useState(null);   // form tạo/sửa đơn mua đa tiền tệ (null = đóng)
+  const [claimForm,setClaimForm]=useState(null); const [packForm,setPackForm]=useState(null);
+  const [poDocId,setPoDocId]=useState(null);     // đơn đang xuất PO song ngữ
+  const [trendSku,setTrendSku]=useState("DCG04");
   const [importPreview,setImportPreview]=useState(null);
   const [allocModal,setAllocModal]=useState(null); const [allocQty,setAllocQty]=useState(""); const [allocReason,setAllocReason]=useState("");
   const [variantModal,setVariantModal]=useState(null);
@@ -1123,29 +1159,32 @@ export default function App(){
     {id:"wb",label:"Cần Mua",icon:ShoppingCart,badge:scope.filter(s=>s.buyClass==="Buy Now").length||undefined},
     {id:"cal",label:"Lịch Nhập",icon:Calendar},
     {id:"var",label:"Biến Thể",icon:Layers},
+    {id:"trend",label:"Mùa Vụ",icon:Target},
     {id:"plan",label:"Sales Plan",icon:TrendingUp,badge:salesPlans.filter(p=>p.status==="Submitted").length||undefined},
     {id:"leader",label:"Leader Duyệt",icon:ShieldAlert,badge:prList.filter(p=>["SUBMITTED_TO_LEADER","REVISION_REQUESTED"].includes(p.status)).length||undefined},
     {id:"approve",label:"CEO Duyệt",icon:ThumbsUp,badge:prList.filter(p=>p.status==="SUBMITTED_TO_CEO").length||undefined},
     {id:"po",label:"PO Tracking",icon:Truck,badge:(mismatchPOs.length+latePOs.length)||undefined},
     {id:"supplier",label:"NCC",icon:Users},
+    {id:"pack",label:"Đóng gói · PO",icon:FileText},
     {id:"cash",label:"Cashflow · CCC",icon:Wallet,badge:budget.total===0?1:undefined},
     {id:"cpmh",label:"Chi phí MH",icon:DollarSign,badge:purchaseOrders.filter(o=>(num(o.depositPct)>0&&!o.depositPaid)||!o.finalPaid).length||undefined},
     {id:"audit",label:"Audit Log",icon:History},
     {id:"sync",label:"POS Sync",icon:Database},
     {id:"inv",label:"Kho & ATP",icon:Box,badge:reconAlerts.length||undefined},
+    {id:"claims",label:"Đền Bù",icon:AlertTriangle,badge:claims.filter(c=>!["Đã đền bù","Đóng","Từ chối"].includes(c.status)).length||undefined},
   ];
   /* ═══ P1.7: Role-based Navigation — nav là UX, quyền thật vẫn check trong handler ═══ */
   const TAB_ACCESS={
-    CEO:["ceo","approve","cap","po","cash","cpmh","wb","cal","var","plan","leader","supplier","data","audit","sync","inv"],
-    Leader:["leader","wb","cal","var","plan","data","cap","inv"],
-    Purchasing:["wb","cal","po","cpmh","supplier","data","sync","leader","inv"],
-    Warehouse:["inv","po","sync"],
+    CEO:["ceo","approve","cap","po","cash","cpmh","wb","cal","var","trend","plan","leader","supplier","pack","data","audit","sync","inv","claims"],
+    Leader:["leader","wb","cal","var","trend","plan","data","cap","inv"],
+    Purchasing:["wb","cal","po","cpmh","supplier","pack","trend","data","sync","leader","inv","claims"],
+    Warehouse:["inv","po","sync","claims"],
     QC:["inv","po"],
-    Accounting:["cash","cpmh","po","audit"],
-    "Sales Planner":["plan","var","inv"],
-    "E-commerce Lead":["plan","var","inv"],
-    "Growth Lead":["plan","var","inv","ceo"],
-    Viewer:["ceo","cap","wb","cal","var","plan","po","supplier","cash","data","inv"],
+    Accounting:["cash","cpmh","po","claims","audit"],
+    "Sales Planner":["plan","var","trend","inv"],
+    "E-commerce Lead":["plan","var","trend","inv"],
+    "Growth Lead":["plan","var","trend","inv","ceo"],
+    Viewer:["ceo","cap","wb","cal","var","trend","plan","po","supplier","pack","cash","data","inv","claims"],
   };
   const DEFAULT_TAB={CEO:"ceo",Leader:"leader",Purchasing:"wb",Warehouse:"inv",QC:"po",Accounting:"cash","Sales Planner":"plan","E-commerce Lead":"plan","Growth Lead":"plan",Viewer:"ceo"};
   const visibleTabs=TABS.filter(t=>(TAB_ACCESS[role]||[]).includes(t.id));
@@ -2446,6 +2485,170 @@ export default function App(){
     </Modal>);
   };
 
+  /* ═══ #3 Sổ đền bù NCC / vận chuyển (mirror "Đối soát kho") ═══ */
+  const renderClaims=()=>{
+    const canEdit=can("po.goodsReceipt")||can("po.resolveMismatch")||can("po.create");
+    const open=claims.filter(c=>!["Đã đền bù","Đóng","Từ chối"].includes(c.status));
+    const compensated=claims.filter(c=>c.status==="Đã đền bù").reduce((a,c)=>a+num(c.value),0);
+    const pendingVal=open.reduce((a,c)=>a+num(c.value),0);
+    const blank=()=>({id:"",orderId:"",sku:"",date:_D(0),qty:0,reason:CLAIM_REASONS[0],party:CLAIM_PARTIES[0],value:0,status:CLAIM_STATUS[0],note:""});
+    const del=c=>askConfirm({title:"Xoá vụ đền bù",msg:`Xoá ${c.id}?`,danger:true,onOk:()=>{setClaims(l=>l.filter(x=>x.id!==c.id));addLog("Claim",c.id,"Xoá vụ đền bù","","","","");showToast("Đã xoá","warn");}});
+    return (<div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <Note tone="info"><span>Theo dõi <strong>hàng lỗi / thiếu / mất</strong> và đền bù từ <strong>NCC · đơn vị vận chuyển · sàn</strong> — nguyên nhân, đơn vị đền, giá trị, trạng thái (giống sheet "Đối soát kho").</span></Note>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
+        <Card icon={AlertTriangle} label="Tổng vụ" value={claims.length} accent="#2563EB"/>
+        <Card icon={Clock} label="Đang xử lý" value={open.length} accent="#D97706" alert={open.length>0}/>
+        <Card icon={DollarSign} label="Giá trị chờ thu hồi" value={fmt(pendingVal)+"₫"} accent="#DC2626" alert={pendingVal>0}/>
+        <Card icon={CheckCircle} label="Đã đền bù" value={fmt(compensated)+"₫"} accent="#059669"/>
+      </div>
+      <Panel title={`Sổ đền bù — ${claims.length}`} right={canEdit&&<Btn onClick={()=>setClaimForm(blank())} color="#059669" small>+ Ghi nhận vụ mới</Btn>}>
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr><TH>Mã</TH><TH>Đơn hàng</TH><TH>SKU</TH><TH>Ngày</TH><TH r>SL</TH><TH>Nguyên nhân</TH><TH>Đơn vị đền</TH><TH r>Giá trị</TH><TH>Trạng thái</TH><TH>Ghi chú</TH>{canEdit&&<TH></TH>}</tr></thead>
+          <tbody>{claims.map(c=>(<tr key={c.id}>
+            <TD m b c="#1D4ED8">{c.id}</TD><TD m>{c.orderId||"—"}</TD><TD m>{c.sku}</TD><TD>{c.date}</TD>
+            <TD r>{num(c.qty).toLocaleString()}</TD><TD><span style={{fontSize:10}}>{c.reason}</span></TD>
+            <TD><span style={{fontSize:10}}>{c.party}</span></TD><TD r b>{c.value?fmtFull(c.value):"—"}</TD>
+            <TD><SB v={c.status} m={CLAIM_ST_C}/></TD><TD><span style={{fontSize:10,color:"#6B7280"}}>{c.note}</span></TD>
+            {canEdit&&<TD><div style={{display:"flex",gap:4}}><Btn onClick={()=>setClaimForm({...c})} color="#6B7280" small>Sửa</Btn><Btn onClick={()=>del(c)} color="#DC2626" small>Xoá</Btn></div></TD>}
+          </tr>))}{!claims.length&&<tr><TD c="#9CA3AF">Chưa có vụ đền bù.</TD></tr>}</tbody></table></div>
+      </Panel>
+      {claimForm&&(()=>{const f=claimForm;const set=(k,v)=>setClaimForm(p=>({...p,[k]:v}));
+        const save=()=>{if(!f.sku){showToast("Chọn SKU","bad");return;}
+          const id=f.id&&f.id.trim()?f.id.trim():`DB-${String(Date.now()).slice(-4)}`;
+          const rec={...f,id,qty:num(f.qty),value:num(f.value)};
+          setClaims(l=>l.some(x=>x.id===id)?l.map(x=>x.id===id?rec:x):[rec,...l]);
+          addLog("Claim",id,`${rec.reason} · ${rec.party}`,"","",rec.status,`${rec.sku} · ${fmt(rec.value)}₫`);
+          showToast("Đã lưu vụ đền bù"); setClaimForm(null);};
+        return (<Modal title={`${claims.some(x=>x.id===f.id)?"Sửa":"Ghi nhận"} vụ đền bù`} onClose={()=>setClaimForm(null)} wide>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+            <Field label="Mã đơn hàng"><Inp value={f.orderId} onChange={v=>set("orderId",v)} placeholder="NV000…"/></Field>
+            <Field label="SKU *"><Sel value={f.sku} onChange={v=>set("sku",v)}><option value="">— chọn —</option>{skus.map(s=><option key={s.sku} value={s.sku}>{s.sku}</option>)}</Sel></Field>
+            <Field label="Ngày tiếp nhận"><Inp value={f.date} onChange={v=>set("date",v)} type="date"/></Field>
+            <Field label="Số lượng"><Inp value={f.qty} onChange={v=>set("qty",v)} type="number"/></Field>
+            <Field label="Nguyên nhân"><Sel value={f.reason} onChange={v=>set("reason",v)}>{CLAIM_REASONS.map(r=><option key={r}>{r}</option>)}</Sel></Field>
+            <Field label="Đơn vị đền bù"><Sel value={f.party} onChange={v=>set("party",v)}>{CLAIM_PARTIES.map(r=><option key={r}>{r}</option>)}</Sel></Field>
+            <Field label="Giá trị đền bù (₫)"><Inp value={f.value} onChange={v=>set("value",v)} type="number"/></Field>
+            <Field label="Trạng thái"><Sel value={f.status} onChange={v=>set("status",v)}>{CLAIM_STATUS.map(r=><option key={r}>{r}</option>)}</Sel></Field>
+            <Field label="Ghi chú"><Inp value={f.note} onChange={v=>set("note",v)}/></Field>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:12}}>
+            <Btn onClick={()=>setClaimForm(null)} color="#6B7280">Huỷ</Btn><Btn onClick={save} color="#059669">Lưu</Btn></div>
+        </Modal>);})()}
+    </div>);
+  };
+  /* ═══ #5 Quy cách đóng gói theo SKU + Xuất PO song ngữ (mirror "Bàn giao nevor" + "PO") ═══ */
+  const renderPack=()=>{
+    const canEdit=can("po.create")||can("supplier.edit");
+    const specOf=sku=>packSpecs.find(p=>p.sku===sku);
+    const blank=()=>({sku:"",nameCn:"",moq:0,pack:"",supplier:"",contact:""});
+    const del=p=>askConfirm({title:"Xoá quy cách",msg:`Xoá quy cách ${p.sku}?`,danger:true,onOk:()=>{setPackSpecs(l=>l.filter(x=>x.sku!==p.sku));showToast("Đã xoá","warn");}});
+    return (<div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <Note tone="info"><span>Quy cách <strong>đóng gói · MOQ · NCC</strong> theo SKU, và <strong>xuất PO song ngữ (VN / 中文)</strong> gửi xưởng — gộp từ sheet "Bàn giao nevor" &amp; "PO".</span></Note>
+      <Panel title={`Quy cách đóng gói theo SKU — ${packSpecs.length}`} right={canEdit&&<Btn onClick={()=>setPackForm(blank())} color="#059669" small>+ Thêm quy cách</Btn>}>
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr><TH>SKU</TH><TH>Tên 中文</TH><TH r>MOQ</TH><TH>Quy cách đóng gói</TH><TH>NCC</TH><TH>Liên hệ</TH>{canEdit&&<TH></TH>}</tr></thead>
+          <tbody>{packSpecs.map(p=>(<tr key={p.sku}>
+            <TD m b c="#1D4ED8">{p.sku}</TD><TD>{p.nameCn}</TD><TD r>{num(p.moq).toLocaleString()}</TD>
+            <TD><span style={{fontSize:10}}>{p.pack}</span></TD><TD><span style={{fontSize:10}}>{p.supplier}</span></TD><TD m>{p.contact||"—"}</TD>
+            {canEdit&&<TD><div style={{display:"flex",gap:4}}><Btn onClick={()=>setPackForm({...p,_orig:p.sku})} color="#6B7280" small>Sửa</Btn><Btn onClick={()=>del(p)} color="#DC2626" small>Xoá</Btn></div></TD>}
+          </tr>))}{!packSpecs.length&&<tr><TD c="#9CA3AF">Chưa có quy cách.</TD></tr>}</tbody></table></div>
+      </Panel>
+      <Panel title="Xuất PO song ngữ (VN / 中文) từ đơn mua">
+        <div style={{padding:12,display:"flex",flexDirection:"column",gap:8}}>
+          <div style={{fontSize:11,color:"#6B7280"}}>Chọn một đơn mua (tab "Chi phí MH") để tạo PO gửi xưởng — kèm quy cách đóng gói, cọc/nốt.</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{purchaseOrders.map(o=>(<Btn key={o.id} onClick={()=>setPoDocId(o.id)} color="#4338CA" small>{o.id} · {o.sku}</Btn>))}
+            {!purchaseOrders.length&&<span style={{fontSize:11,color:"#9CA3AF"}}>Chưa có đơn mua — tạo ở tab Chi phí MH.</span>}</div>
+        </div>
+      </Panel>
+      {packForm&&(()=>{const f=packForm;const set=(k,v)=>setPackForm(p=>({...p,[k]:v}));
+        const save=()=>{if(!f.sku){showToast("Chọn SKU","bad");return;}
+          const rec={sku:f.sku.trim(),nameCn:f.nameCn,moq:num(f.moq),pack:f.pack,supplier:f.supplier,contact:f.contact};
+          setPackSpecs(l=>{const key=f._orig||f.sku.trim();return l.some(x=>x.sku===key)?l.map(x=>x.sku===key?rec:x):[rec,...l];});
+          showToast("Đã lưu quy cách"); setPackForm(null);};
+        return (<Modal title="Quy cách đóng gói" onClose={()=>setPackForm(null)} wide>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <Field label="SKU *"><Sel value={f.sku} onChange={v=>set("sku",v)}><option value="">— chọn —</option>{skus.map(s=><option key={s.sku} value={s.sku}>{s.sku}</option>)}</Sel></Field>
+            <Field label="Tên 中文 (gửi xưởng)"><Inp value={f.nameCn} onChange={v=>set("nameCn",v)}/></Field>
+            <Field label="MOQ"><Inp value={f.moq} onChange={v=>set("moq",v)} type="number"/></Field>
+            <Field label="NCC / xưởng"><Inp value={f.supplier} onChange={v=>set("supplier",v)}/></Field>
+            <Field label="Liên hệ"><Inp value={f.contact} onChange={v=>set("contact",v)}/></Field>
+          </div>
+          <Field label="Quy cách đóng gói"><Inp value={f.pack} onChange={v=>set("pack",v)} placeholder="Túi zip / hộp / HDSD / thùng…"/></Field>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:12}}>
+            <Btn onClick={()=>setPackForm(null)} color="#6B7280">Huỷ</Btn><Btn onClick={save} color="#059669">Lưu</Btn></div>
+        </Modal>);})()}
+      {poDocId&&(()=>{const o=purchaseOrders.find(x=>x.id===poDocId);if(!o)return null;const c=mcCalc(o,cfg);const sp=specOf(o.sku)||{};const s=skuIndex[o.sku]||{};
+        const cs=CCY_SYM[o.ccy];
+        const docHtml=`<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>PO ${o.id}</title></head><body style="font-family:Arial,'Microsoft YaHei',sans-serif;max-width:720px;margin:24px auto;color:#111827"><h2 style="border-bottom:2px solid #111;padding-bottom:6px;margin:0">NEVOR · ĐƠN ĐẶT HÀNG <span style="font-size:13px;color:#666">采购订单 / PURCHASE ORDER</span></h2><p><b>PO:</b> ${o.id} &nbsp; <b>Ngày 日期:</b> ${o.date}<br><b>NCC 供应商:</b> ${o.supplier||sp.supplier||"—"} &nbsp; <b>Liên hệ 联系:</b> ${sp.contact||"—"}</p><table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="background:#f3f4f6"><th style="border:1px solid #ccc;padding:6px">Mã 编号</th><th style="border:1px solid #ccc;padding:6px">Tên 名称</th><th style="border:1px solid #ccc;padding:6px">SL 数量</th><th style="border:1px solid #ccc;padding:6px">Đơn giá 单价</th><th style="border:1px solid #ccc;padding:6px">Tổng 金额</th></tr><tr><td style="border:1px solid #ccc;padding:6px">${o.sku}</td><td style="border:1px solid #ccc;padding:6px">${s.name||o.sku}<br><span style="color:#666">${sp.nameCn||""}</span></td><td style="border:1px solid #ccc;padding:6px;text-align:right">${num(o.qty).toLocaleString()}</td><td style="border:1px solid #ccc;padding:6px;text-align:right">${cs}${num(o.unitPrice).toLocaleString()}</td><td style="border:1px solid #ccc;padding:6px;text-align:right">${cs}${Math.round(c.totalF).toLocaleString()}</td></tr></table><p><b>Quy cách đóng gói 包装要求:</b> ${sp.pack||"—"}</p><p><b>Cọc 定金 (${pct(c.dep)}):</b> ${cs}${Math.round(c.totalF*c.dep).toLocaleString()} &nbsp; <b>Thanh toán nốt 尾款:</b> ${cs}${Math.round(c.totalF*(1-c.dep)).toLocaleString()} &nbsp; <b>MOQ:</b> ${sp.moq||"—"}</p></body></html>`;
+        const dl=()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([docHtml],{type:"text/html;charset=utf-8"}));a.download=`PO-${o.id}.html`;a.click();};
+        return (<Modal title={`PO song ngữ — ${o.id}`} onClose={()=>setPoDocId(null)} wide>
+          <div style={{border:"1px solid #E5E7EB",borderRadius:8,padding:16,fontSize:12,background:"#fff"}}>
+            <div style={{display:"flex",justifyContent:"space-between",borderBottom:"2px solid #111827",paddingBottom:8,marginBottom:10}}>
+              <div><div style={{fontSize:16,fontWeight:800}}>NEVOR · ĐƠN ĐẶT HÀNG</div><div style={{fontSize:11,color:"#6B7280"}}>采购订单 · PURCHASE ORDER</div></div>
+              <div style={{textAlign:"right",fontSize:11}}><div><strong>{o.id}</strong></div><div>日期 {o.date}</div></div></div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+              <div><strong>NCC 供应商:</strong> {o.supplier||sp.supplier||"—"}</div><div><strong>Liên hệ 联系:</strong> {sp.contact||"—"}</div></div>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,marginBottom:10}}>
+              <thead><tr style={{background:"#F3F4F6"}}><th style={{padding:6,textAlign:"left",border:"1px solid #E5E7EB"}}>Mã 编号</th><th style={{padding:6,textAlign:"left",border:"1px solid #E5E7EB"}}>Tên 名称</th><th style={{padding:6,textAlign:"right",border:"1px solid #E5E7EB"}}>SL 数量</th><th style={{padding:6,textAlign:"right",border:"1px solid #E5E7EB"}}>Đơn giá 单价</th><th style={{padding:6,textAlign:"right",border:"1px solid #E5E7EB"}}>Tổng 金额</th></tr></thead>
+              <tbody><tr><td style={{padding:6,border:"1px solid #E5E7EB",fontFamily:"monospace"}}>{o.sku}</td><td style={{padding:6,border:"1px solid #E5E7EB"}}>{s.name||o.sku}<div style={{fontSize:10,color:"#6B7280"}}>{sp.nameCn}</div></td><td style={{padding:6,border:"1px solid #E5E7EB",textAlign:"right"}}>{num(o.qty).toLocaleString()}</td><td style={{padding:6,border:"1px solid #E5E7EB",textAlign:"right"}}>{cs}{num(o.unitPrice).toLocaleString()}</td><td style={{padding:6,border:"1px solid #E5E7EB",textAlign:"right"}}>{cs}{Math.round(c.totalF).toLocaleString()}</td></tr></tbody></table>
+            <div style={{marginBottom:8}}><strong>Quy cách đóng gói 包装要求:</strong> {sp.pack||"— (thêm ở bảng trên)"}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,fontSize:11}}>
+              <div><strong>Cọc 定金 ({pct(c.dep)}):</strong> {cs}{Math.round(c.totalF*c.dep).toLocaleString()}</div>
+              <div><strong>Nốt 尾款:</strong> {cs}{Math.round(c.totalF*(1-c.dep)).toLocaleString()}</div>
+              <div><strong>MOQ:</strong> {sp.moq||"—"}</div></div>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:12}}>
+            <Btn onClick={()=>setPoDocId(null)} color="#6B7280">Đóng</Btn><Btn onClick={dl} color="#4338CA">Tải PO (.html)</Btn></div>
+        </Modal>);})()}
+    </div>);
+  };
+  /* ═══ #6 Mùa vụ & xu hướng — tốc độ bán theo tháng + hệ số mùa vụ (mirror "DOANH SỐ 2026") ═══ */
+  const renderTrend=()=>{
+    const canEdit=can("salesPlan.edit")||can("data.edit");
+    const skusWithData=Object.keys(VELO_SEED);
+    const series=VELO_SEED[trendSku]||[];
+    const first=series[0]?.v||0,last=series[series.length-1]?.v||0;
+    const trendPct=first?((last-first)/first):0;
+    const factor=num(trendFactors[trendSku])||1;
+    const s=skuIndex[trendSku]||{};
+    const baseVel=last||s.fds||0;
+    const rows=skusWithData.map(sku=>{const ser=VELO_SEED[sku];const f=ser[0]?.v||0,l=ser[ser.length-1]?.v||0;
+      return {sku,first:f,last:l,tp:f?(l-f)/f:0,factor:num(trendFactors[sku])||1};});
+    return (<div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <Note tone="info"><span>Tốc độ bán <strong>theo tháng</strong> (Sp/ngày) + <strong>hệ số mùa vụ</strong> để điều chỉnh dự báo — nền từ sheet "DOANH SỐ 2026". Hệ số &gt; 1 = mùa cao điểm.</span></Note>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
+        <Card icon={Target} label="SKU đang xem" value={trendSku} accent="#2563EB"/>
+        <Card icon={TrendingUp} label="Xu hướng (đầu→cuối)" value={(trendPct>=0?"+":"")+pct(trendPct)} accent={trendPct>=0?"#059669":"#DC2626"}/>
+        <Card icon={Zap} label="Tốc độ hiện tại" value={Math.round(baseVel)+" sp/ngày"} accent="#7C3AED"/>
+        <Card icon={Calendar} label="Dự báo ×mùa vụ" value={Math.round(baseVel*factor)+" sp/ngày"} sub={`hệ số ${factor}`} accent="#D97706"/>
+      </div>
+      <Panel title="Tốc độ bán theo tháng" right={<Sel value={trendSku} onChange={setTrendSku}>{skusWithData.map(k=><option key={k}>{k}</option>)}</Sel>}>
+        <div style={{padding:14,height:240}}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={series} margin={{top:6,right:10,left:-12,bottom:0}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6"/>
+              <XAxis dataKey="m" tick={{fontSize:11}}/><YAxis tick={{fontSize:11}}/>
+              <Tooltip formatter={v=>[`${v} sp/ngày`,"Tốc độ"]}/>
+              <Bar dataKey="v" radius={[4,4,0,0]}>{series.map((e,i)=><Cell key={i} fill={i===series.length-1?"#7C3AED":"#C4B5FD"}/>)}</Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </Panel>
+      <Panel title="Xu hướng & hệ số mùa vụ theo SKU">
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr><TH>SKU</TH><TH r>Tốc độ đầu kỳ</TH><TH r>Tốc độ cuối kỳ</TH><TH r>Xu hướng</TH><TH r>Hệ số mùa vụ</TH><TH r>Dự báo ×mùa vụ</TH><TH></TH></tr></thead>
+          <tbody>{rows.map(r=>(<tr key={r.sku} style={{background:r.sku===trendSku?"#F5F3FF":"transparent"}}>
+            <TD m b c="#1D4ED8"><span onClick={()=>setTrendSku(r.sku)} style={{cursor:"pointer"}}>{r.sku}</span></TD>
+            <TD r>{r.first}</TD><TD r b>{r.last}</TD>
+            <TD r><span style={{color:r.tp>=0?"#059669":"#DC2626",fontWeight:700}}>{(r.tp>=0?"+":"")+pct(r.tp)}</span></TD>
+            <TD r>{canEdit?<input type="number" step="0.05" value={r.factor} onChange={e=>setTrendFactors(p=>({...p,[r.sku]:e.target.value}))} style={{width:64,padding:"3px 6px",borderRadius:6,border:"1px solid #D1D5DB",fontSize:11,textAlign:"right"}}/>:r.factor}</TD>
+            <TD r b c="#7C3AED">{Math.round(r.last*r.factor)}</TD>
+            <TD><Btn onClick={()=>setTrendSku(r.sku)} color="#6B7280" small>Xem</Btn></TD>
+          </tr>))}</tbody></table></div>
+      </Panel>
+    </div>);
+  };
+
   const modals=(<>
     {/* Confirm dialog dùng chung — thay window.confirm (spec §29) */}
     {confirmReq&&(()=>{const r=confirmReq;
@@ -3125,7 +3328,7 @@ export default function App(){
         {tab==="data"&&renderData()}{tab==="ceo"&&renderCEO()}{tab==="cap"&&renderCap()}{tab==="wb"&&renderWB()}
         {tab==="cal"&&renderCal()}{tab==="var"&&renderVar()}{tab==="plan"&&renderPlan()}
         {tab==="leader"&&renderLeader()}{tab==="approve"&&renderApprove()}
-        {tab==="po"&&renderPO()}{tab==="supplier"&&renderSup()}{tab==="cash"&&renderCash()}{tab==="cpmh"&&renderCPMH()}
+        {tab==="po"&&renderPO()}{tab==="supplier"&&renderSup()}{tab==="cash"&&renderCash()}{tab==="cpmh"&&renderCPMH()}{tab==="trend"&&renderTrend()}{tab==="pack"&&renderPack()}{tab==="claims"&&renderClaims()}
         {tab==="audit"&&renderAudit()}{tab==="sync"&&renderSync()}{tab==="inv"&&renderInv()}
       </div>
     </main>
