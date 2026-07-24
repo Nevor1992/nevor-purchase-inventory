@@ -2035,6 +2035,52 @@ export default function App(){
     return {pancake:true,total:Object.keys(agg).length,direct,parent,unmatched,names};
   };
 
+  /* ── Parser Pancake "Tồn kho theo MẪU MÃ" (inventory_by_variation): header 2 tầng gộp ô,
+     mỗi biến thể 1 dòng · MÃ MẪU = SKU · nhóm cột XUẤT>Bán, NHẬP>NCC/Trả, TỒN CUỐI>SL ── */
+  const parsePancakeVar=arr=>{
+    let h=-1;
+    for(let i2=0;i2<Math.min(6,arr.length);i2++){const row=(arr[i2]||[]).map(x=>String(x??"").toUpperCase());
+      if(row.some(x=>x.includes("MÃ MẪU"))){h=i2;break;}}
+    if(h<0)return null;
+    const top=(arr[h]||[]).map(x=>String(x??""));
+    const sub=(arr[h+1]||[]).map(x=>String(x??""));
+    /* header có tầng phụ (SL/Bán/Trả/Giá trị) → dữ liệu bắt đầu sau 2 dòng; nếu không, chỉ 1 dòng */
+    const isSub=sub.some(x=>["SL","BÁN","TRẢ","GIÁ TRỊ"].includes(x.trim().toUpperCase()));
+    const dataStart=isSub?h+2:h+1;
+    const idxOf=inc=>{for(let c=0;c<top.length;c++)if(top[c].toUpperCase().includes(inc))return c;return -1;};
+    /* tìm cột lá trong 1 nhóm gộp (vd nhóm "XUẤT TRONG KỲ" → lá "BÁN"); fallback = vị trí cố định của Pancake */
+    const grpCol=(grp,leaf,fb)=>{if(!isSub)return fb;
+      let gs=-1;for(let c=0;c<top.length;c++)if(top[c].toUpperCase().includes(grp)){gs=c;break;}
+      if(gs<0)return fb;let ge=top.length;for(let c=gs+1;c<top.length;c++)if(top[c].trim()!==""){ge=c;break;}
+      for(let c=gs;c<ge;c++)if(sub[c].trim().toUpperCase()===leaf)return c;return fb;};
+    const cSku=idxOf("MÃ MẪU")>=0?idxOf("MÃ MẪU"):3, cPc=idxOf("MÃ SẢN PHẨM")>=0?idxOf("MÃ SẢN PHẨM"):2, cName=idxOf("TÊN")>=0?idxOf("TÊN"):1;
+    const cBan=grpCol("XUẤT","BÁN",17), cTra=grpCol("NHẬP","TRẢ",11), cNcc=grpCol("NHẬP","NCC",9), cTon=grpCol("TỒN CUỐI","SL",21);
+    const agg={},names={};
+    for(let i2=dataStart;i2<arr.length;i2++){const r=arr[i2]||[];
+      const mm=String(r[cSku]??"").trim();if(!mm||mm.toUpperCase()==="MÃ MẪU")continue;
+      const pc=String(r[cPc]??"").trim();
+      const a=agg[mm]=agg[mm]||{ban:0,tra:0,nhapNCC:0,tonCuoi:0,pc};
+      a.ban+=num(r[cBan]);a.tra+=num(r[cTra]);a.nhapNCC+=num(r[cNcc]);a.tonCuoi+=num(r[cTon]);
+      if(r[cName]&&!names[mm])names[mm]=String(r[cName]).slice(0,50);}
+    if(!Object.keys(agg).length)return null;
+    const direct={},parent={},parentAgg={},unmatched=[];
+    const addDirect=(sku,a,via)=>{const d=direct[sku]=direct[sku]||{ban:0,tra:0,nhapNCC:0,tonCuoi:0,via};
+      d.ban+=a.ban;d.tra+=a.tra;d.nhapNCC+=a.nhapNCC;d.tonCuoi=(d.tonCuoi??0)+a.tonCuoi;};
+    Object.entries(agg).forEach(([mm,a])=>{
+      const rv=resolvePosRow(mm,posMap);
+      if(rv.type==="combo"){rv.targets.forEach(t=>{if(REAL_ROWS.some(x=>x.sku===t.sku)){
+        const d=direct[t.sku]=direct[t.sku]||{ban:0,tra:0,nhapNCC:0,tonCuoi:null,via:"combo"};d.ban+=a.ban*t.qty;}});return;}
+      const tv=rv.targets[0]?.sku;
+      if(tv&&REAL_ROWS.some(x=>x.sku===tv)){addDirect(tv,a,rv.type);return;}          /* MÃ MẪU khớp trực tiếp / qua POS Map */
+      if(a.pc&&REAL_ROWS.some(x=>x.sku===a.pc)){addDirect(a.pc,a,"parent-sku");return;} /* SP quản theo mã cha (gộp biến thể) */
+      if(a.pc&&REAL_ROWS.some(x=>x.productCode===a.pc)){                                /* SP quản theo biến thể → gom mã cha để chia */
+        const p=parentAgg[a.pc]=parentAgg[a.pc]||{ban:0,tra:0,nhapNCC:0,tonCuoi:0,name:names[mm]||""};
+        p.ban+=a.ban;p.tra+=a.tra;p.nhapNCC+=a.nhapNCC;p.tonCuoi+=a.tonCuoi;return;}
+      unmatched.push(mm);});
+    Object.entries(parentAgg).forEach(([pc,p])=>{parent[pc]={...p,nVars:REAL_ROWS.filter(x=>x.productCode===pc).length};});
+    return {pancake:true,variation:true,total:Object.keys(agg).length,direct,parent,unmatched,names};
+  };
+
   /* Import file cột phẳng (file mẫu của tool) */
   const buildFlat=(rows,hash,fname,dup)=>{
     const get=(r,keys)=>{for(const k of keys)if(r[k]!==undefined&&r[k]!=="")return r[k];return undefined;};
@@ -2087,6 +2133,8 @@ export default function App(){
       const arr=XLSX.utils.sheet_to_json(sheet,{header:1,defval:undefined});
       const pk=parsePancake(arr);
       if(pk){setImportPreview({...pk,period:"7",distribute:true,updStock:false,fileHash:hash,fileName:file.name,duplicate:!!dup,dupOf:dup?.id});return;}
+      const pv=parsePancakeVar(arr);
+      if(pv){setImportPreview({...pv,period:"7",distribute:true,updStock:false,fileHash:hash,fileName:file.name,duplicate:!!dup,dupOf:dup?.id});return;}
       buildFlat(XLSX.utils.sheet_to_json(sheet),hash,file.name,dup);
     };rd.readAsArrayBuffer(file);
     e.target.value="";
@@ -2811,7 +2859,7 @@ export default function App(){
     {importPreview&&importPreview.pancake&&(()=>{const r=importPreview;
       const nDirect=Object.keys(r.direct).length,nParent=Object.keys(r.parent).length;
       const banParent=Object.values(r.parent).reduce((a,x)=>a+x.ban,0);
-      return (<Modal title={r.duplicate?"⛔ FILE TRÙNG — đã import trước đó":"Preview file Pancake (XNK theo sản phẩm) — chưa áp dụng"} onClose={()=>setImportPreview(null)} wide>
+      return (<Modal title={r.duplicate?"⛔ FILE TRÙNG — đã import trước đó":`Preview file Pancake (${r.variation?"Tồn kho theo MẪU MÃ":"XNK theo sản phẩm"}) — chưa áp dụng`} onClose={()=>setImportPreview(null)} wide>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8,marginBottom:12}}>
           <Card icon={FileText} label="Tổng mã trong file" value={r.total} accent="#2563EB"/>
           <Card icon={CheckCircle} label="Khớp trực tiếp" value={nDirect} accent="#059669"/>
