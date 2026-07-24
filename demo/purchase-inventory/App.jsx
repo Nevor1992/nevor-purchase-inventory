@@ -96,6 +96,7 @@ const DEFAULT_CFG={
   targetCoverDefault:45,
   feeRate:{NEVOR:0.32,UHERO:0.32,"MONA MASK":0.32},
   brandBudgets:{NEVOR:0,UHERO:0,"MONA MASK":0},   // ngân sách mua hàng/tháng theo brand
+  fxRates:{CNY:3930,USD:25400},                    // tỷ giá gợi ý → VND (đơn VND = 1); sửa được mỗi đơn
 };
 const REAL_ROWS=[
   {sku:"TCN02",productCode:"TCN02",brand:"NEVOR",name:"Tất vớ thể thao cao cấp Nevor TCN-02 thoáng khí ngăn",stockPOS:71435,stockOffice:32,stockShopee:64429,availableStock:71403,sold30:26799,returned30:2244,received30:37807,landedCost:43045},
@@ -688,6 +689,37 @@ const Toasts=({list})=>(<div style={{position:"fixed",bottom:16,right:16,zIndex:
 </div>);
 
 /* ═══ 7. MAIN APP ═══ */
+/* ═══ Đa tiền tệ mua hàng (CNY/USD/VND → VND) + giá vốn cấu phần + lịch thanh toán ═══ */
+const CCY=["CNY","USD","VND"];
+const CCY_SYM={CNY:"¥",USD:"US$",VND:"₫"};
+const CCY_VN={CNY:"Tệ · CNY",USD:"Đô · USD",VND:"Đồng · VND"};
+const mcFx=(o,cfg)=>o?.ccy==="VND"?1:(num(o?.fx)||num(cfg?.fxRates?.[o?.ccy])||1);
+/* Quy đổi 1 đơn mua về VND + dựng giá vốn/SP theo cấu phần (giống sheet "Tính giá vốn") */
+const mcCalc=(o,cfg)=>{
+  const fx=mcFx(o,cfg), qty=Math.max(1,num(o.qty));
+  const goodsF=num(o.unitPrice)*num(o.qty), shipF=num(o.shipForeign), moldF=num(o.moldFee);
+  const totalF=goodsF+shipF+moldF;
+  const goodsVND=goodsF*fx, shipVND=shipF*fx, moldVND=moldF*fx, totalVND=totalF*fx;
+  const dep=Math.min(1,Math.max(0,num(o.depositPct)));
+  const depositVND=Math.round(totalVND*dep), finalVND=Math.round(totalVND-depositVND);
+  const lc=o.lc||{};
+  const foreignUnit=(goodsVND+shipVND)/qty;                 // giá hàng + ship nội địa nước ngoài → VND/SP
+  const trustUnit=num(lc.trustPct)*goodsVND/qty;            // phí ủy thác % trên giá hàng
+  const domesticUnit=num(lc.shipVN)+num(lc.box)+num(lc.manual)+num(lc.otherPack)+num(lc.labor)+num(lc.other); // VND/SP
+  const moldUnit=moldVND/qty;                                // phí khuôn/bản mẫu phân bổ / SP
+  const sub=foreignUnit+trustUnit+domesticUnit+moldUnit;
+  const vatUnit=num(lc.vatPct)*sub;
+  const landedUnit=Math.round(sub+vatUnit);
+  return {fx,qty,goodsF,shipF,moldF,totalF,goodsVND,shipVND,moldVND,totalVND,dep,depositVND,finalVND,foreignUnit,trustUnit,domesticUnit,moldUnit,vatUnit,landedUnit};
+};
+const mcBlank=cfg=>({id:"",date:_D(0),sku:"",supplier:"",ccy:"CNY",qty:0,unitPrice:0,shipForeign:0,fx:num(cfg?.fxRates?.CNY)||3930,moldFee:0,depositPct:0.3,depositDue:_D(1),finalDue:_D(25),payMethod:"Tiểu ngạch",depositPaid:false,finalPaid:false,status:"Draft",lc:{shipVN:0,trustPct:0,box:0,manual:0,otherPack:0,labor:0,vatPct:0,other:0}});
+const PO_MC_SEED=[
+  {id:"NV000148",date:_D(-20),sku:"DCG03",supplier:"NCC Đông Quản (DEMO)",ccy:"CNY",qty:200,unitPrice:31,shipForeign:100,fx:3930,moldFee:0,depositPct:0.3,depositDue:_D(-19),finalDue:_D(-2),payMethod:"Tiểu ngạch",depositPaid:true,finalPaid:false,status:"Ordered",lc:{shipVN:2200,trustPct:0.02,box:3500,manual:500,otherPack:0,labor:800,vatPct:0,other:0}},
+  {id:"NV000131",date:_D(-14),sku:"DCG04",supplier:"NCC Quảng Châu A (DEMO)",ccy:"CNY",qty:200,unitPrice:37,shipForeign:100,fx:3930,moldFee:0,depositPct:0.3,depositDue:_D(-13),finalDue:_D(6),payMethod:"Tiểu ngạch",depositPaid:true,finalPaid:false,status:"In Production",lc:{shipVN:2200,trustPct:0.02,box:4000,manual:500,otherPack:0,labor:900,vatPct:0,other:0}},
+  {id:"NV000160",date:_D(-6),sku:"UWCP01-91",supplier:"NCC Ninh Ba (DEMO)",ccy:"USD",qty:500,unitPrice:6.9,shipForeign:120,fx:25400,moldFee:300,depositPct:0.3,depositDue:_D(-5),finalDue:_D(20),payMethod:"Chính ngạch",depositPaid:true,finalPaid:false,status:"Deposit",lc:{shipVN:1500,trustPct:0,box:2000,manual:800,otherPack:0,labor:600,vatPct:0.08,other:0}},
+  {id:"NV000165",date:_D(-2),sku:"BM01",supplier:"NCC nội địa VN (DEMO)",ccy:"VND",qty:1000,unitPrice:9000,shipForeign:0,fx:1,moldFee:0,depositPct:0,depositDue:null,finalDue:_D(3),payMethod:"Chuyển khoản",depositPaid:false,finalPaid:false,status:"Ordered",lc:{shipVN:0,trustPct:0,box:0,manual:0,otherPack:0,labor:400,vatPct:0.08,other:0}},
+];
+
 export default function App(){
   const [tab,setTab]=useState("data");
   const [role,setRole]=useState("CEO");
@@ -717,6 +749,7 @@ export default function App(){
   const [suppliers,setSuppliers]=useState(SUPPLIERS_SEED);
   const [supplierSku,setSupplierSku]=useState(SUP_SKU_SEED);
   const [poList,setPoList]=useState(PO_SEED);
+  const [purchaseOrders,setPurchaseOrders]=useState(PO_MC_SEED);   // đơn mua đa tiền tệ (CPMH)
   const [salesPlans,setSalesPlans]=useState(PLAN_SEED);
   const [campaigns,setCampaigns]=useState(CAMPAIGN_SEED);
   const [boms,setBoms]=useState(BOM_SEED);
@@ -753,7 +786,7 @@ export default function App(){
       }
     }catch(e){console.warn("migrate v9",e);}}
     if(data){
-      if(data.cfg)setCfg({...DEFAULT_CFG,...data.cfg,feeRate:{...DEFAULT_CFG.feeRate,...(data.cfg.feeRate||{})},brandBudgets:{...DEFAULT_CFG.brandBudgets,...(data.cfg.brandBudgets||{})}});
+      if(data.cfg)setCfg({...DEFAULT_CFG,...data.cfg,feeRate:{...DEFAULT_CFG.feeRate,...(data.cfg.feeRate||{})},brandBudgets:{...DEFAULT_CFG.brandBudgets,...(data.cfg.brandBudgets||{})},fxRates:{...DEFAULT_CFG.fxRates,...(data.cfg.fxRates||{})}});
       if(data.skuMeta)setSkuMeta({...META_SEED,...data.skuMeta});
       if(data.prList)setPrList(data.prList);
       if(data.snapshots)setSnapshots(data.snapshots);
@@ -764,6 +797,7 @@ export default function App(){
       if(data.suppliers)setSuppliers(data.suppliers);
       if(data.supplierSku)setSupplierSku(data.supplierSku);
       if(data.poList)setPoList(data.poList);
+      if(data.purchaseOrders)setPurchaseOrders(data.purchaseOrders);
       if(data.salesPlans)setSalesPlans(data.salesPlans);
       if(data.campaigns)setCampaigns(data.campaigns);
       if(data.boms)setBoms(data.boms);
@@ -781,11 +815,11 @@ export default function App(){
   useEffect(()=>{if(!loaded)return;let alive=true;
     setSaveInfo(s=>({...s,st:"saving"}));
     (async()=>{
-      const via=await saveState({cfg,skuMeta,prList,snapshots,ledger,receipts,budgets,reconAlerts,suppliers,supplierSku,poList,salesPlans,campaigns,boms,posImports:posImports.slice(0,60),mappingQueue,allocOverrides,fcstLog:fcstLog.slice(0,600),posMap,rowOv,auditLog:auditLog.slice(0,400),lastSync});
+      const via=await saveState({cfg,skuMeta,prList,snapshots,ledger,receipts,budgets,reconAlerts,suppliers,supplierSku,poList,salesPlans,campaigns,boms,purchaseOrders,posImports:posImports.slice(0,60),mappingQueue,allocOverrides,fcstLog:fcstLog.slice(0,600),posMap,rowOv,auditLog:auditLog.slice(0,400),lastSync});
       if(alive)setSaveInfo({st:via?"saved":"error",via:via||""});
     })();
     return ()=>{alive=false;};
-  },[cfg,skuMeta,prList,snapshots,ledger,receipts,budgets,reconAlerts,suppliers,supplierSku,poList,salesPlans,campaigns,boms,posImports,mappingQueue,allocOverrides,fcstLog,posMap,rowOv,auditLog,lastSync,loaded]);
+  },[cfg,skuMeta,prList,snapshots,ledger,receipts,budgets,reconAlerts,suppliers,supplierSku,poList,salesPlans,campaigns,boms,purchaseOrders,posImports,mappingQueue,allocOverrides,fcstLog,posMap,rowOv,auditLog,lastSync,loaded]);
 
   const addLog=(entityType,entityId,action,detail,before,after,reason)=>setAuditLog(p=>[{
     id:Date.now()+Math.random(),timestamp:new Date().toISOString(),user:role,role,
@@ -1072,6 +1106,7 @@ export default function App(){
   const [createPoSku,setCreatePoSku]=useState(null);
   const [mergePoModal,setMergePoModal]=useState(null);
   const [cfgModal,setCfgModal]=useState(false); const [cfgForm,setCfgForm]=useState({});
+  const [poMcForm,setPoMcForm]=useState(null);   // form tạo/sửa đơn mua đa tiền tệ (null = đóng)
   const [importPreview,setImportPreview]=useState(null);
   const [allocModal,setAllocModal]=useState(null); const [allocQty,setAllocQty]=useState(""); const [allocReason,setAllocReason]=useState("");
   const [variantModal,setVariantModal]=useState(null);
@@ -1094,18 +1129,19 @@ export default function App(){
     {id:"po",label:"PO Tracking",icon:Truck,badge:(mismatchPOs.length+latePOs.length)||undefined},
     {id:"supplier",label:"NCC",icon:Users},
     {id:"cash",label:"Cashflow · CCC",icon:Wallet,badge:budget.total===0?1:undefined},
+    {id:"cpmh",label:"Chi phí MH",icon:DollarSign,badge:purchaseOrders.filter(o=>(num(o.depositPct)>0&&!o.depositPaid)||!o.finalPaid).length||undefined},
     {id:"audit",label:"Audit Log",icon:History},
     {id:"sync",label:"POS Sync",icon:Database},
     {id:"inv",label:"Kho & ATP",icon:Box,badge:reconAlerts.length||undefined},
   ];
   /* ═══ P1.7: Role-based Navigation — nav là UX, quyền thật vẫn check trong handler ═══ */
   const TAB_ACCESS={
-    CEO:["ceo","approve","cap","po","cash","wb","cal","var","plan","leader","supplier","data","audit","sync","inv"],
+    CEO:["ceo","approve","cap","po","cash","cpmh","wb","cal","var","plan","leader","supplier","data","audit","sync","inv"],
     Leader:["leader","wb","cal","var","plan","data","cap","inv"],
-    Purchasing:["wb","cal","po","supplier","data","sync","leader","inv"],
+    Purchasing:["wb","cal","po","cpmh","supplier","data","sync","leader","inv"],
     Warehouse:["inv","po","sync"],
     QC:["inv","po"],
-    Accounting:["cash","po","audit"],
+    Accounting:["cash","cpmh","po","audit"],
     "Sales Planner":["plan","var","inv"],
     "E-commerce Lead":["plan","var","inv"],
     "Growth Lead":["plan","var","inv","ceo"],
@@ -2283,6 +2319,133 @@ export default function App(){
   </div>);
 
   /* ═══════════ MODALS ═══════════ */
+  /* ═══ Chi phí MH — đơn mua đa tiền tệ + giá vốn cấu phần + lịch thanh toán (mirror CPMH / Tính giá vốn / Mẫu thanh toán) ═══ */
+  const renderCPMH=()=>{
+    const canEdit=can("po.create")||can("po.actualCost");
+    const canPayDep=can("po.confirmDeposit"), canPayFin=can("po.confirmFinal");
+    const rows=purchaseOrders.map(o=>({o,c:mcCalc(o,cfg)}));
+    const totVND=rows.reduce((a,x)=>a+x.c.totalVND,0);
+    const owedDep=rows.filter(x=>num(x.o.depositPct)>0&&!x.o.depositPaid).reduce((a,x)=>a+x.c.depositVND,0);
+    const owedFin=rows.filter(x=>!x.o.finalPaid).reduce((a,x)=>a+x.c.finalVND,0);
+    const byCcy=CCY.map(cc=>({cc,n:purchaseOrders.filter(o=>o.ccy===cc).length})).filter(x=>x.n>0);
+    const pays=[];
+    rows.forEach(({o,c})=>{
+      if(num(o.depositPct)>0)pays.push({o,kind:"Cọc",amount:c.depositVND,foreign:c.totalF*c.dep,due:o.depositDue,paid:o.depositPaid,payKey:"depositPaid"});
+      pays.push({o,kind:"Nốt",amount:c.finalVND,foreign:c.totalF*(1-c.dep),due:o.finalDue,paid:o.finalPaid,payKey:"finalPaid"});
+    });
+    const pending=pays.filter(p=>!p.paid).sort((a,b)=>String(a.due||"~").localeCompare(String(b.due||"~")));
+    const upcoming=pending.reduce((a,p)=>a+p.amount,0);
+    const setPaid=(id,key,val)=>{setPurchaseOrders(list=>list.map(o=>o.id===id?{...o,[key]:val}:o));
+      addLog("CPMH",id,`${val?"Đã trả":"Bỏ đánh dấu"} ${key==="depositPaid"?"cọc":"nốt"}`,"","",val?"Paid":"Unpaid","");
+      showToast(val?"Đã ghi nhận thanh toán":"Đã bỏ đánh dấu",val?"ok":"warn");};
+    const del=o=>askConfirm({title:"Xoá đơn mua",msg:`Xoá ${o.id} (${o.sku})?`,danger:true,onOk:()=>{setPurchaseOrders(l=>l.filter(x=>x.id!==o.id));addLog("CPMH",o.id,"Xoá đơn mua","","","","");showToast("Đã xoá","warn");}});
+    return (<div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <Note tone="info"><span>Đơn mua NCC <strong>đa tiền tệ</strong> (¥ CNY · US$ USD · ₫ VND) — tỷ giá lưu theo <strong>từng đơn</strong>, quy về VND để tính <strong>giá vốn/SP</strong> và <strong>dòng tiền phải trả</strong>. Đơn VND không cần tỷ giá.</span></Note>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
+        <Card icon={ShoppingCart} label="Đơn mua" value={purchaseOrders.length} sub={byCcy.map(x=>`${x.n} ${x.cc}`).join(" · ")||"—"} accent="#2563EB"/>
+        <Card icon={DollarSign} label="Tổng giá trị mua" value={fmt(totVND)+"₫"} accent="#7C3AED"/>
+        <Card icon={Wallet} label="Còn phải trả cọc" value={fmt(owedDep)+"₫"} accent="#D97706" alert={owedDep>0}/>
+        <Card icon={Clock} label="Còn phải trả nốt" value={fmt(owedFin)+"₫"} accent="#DC2626" alert={owedFin>0}/>
+      </div>
+      <Panel title={`Đơn mua NCC (đa tiền tệ) — ${purchaseOrders.length}`} right={canEdit&&<Btn onClick={()=>setPoMcForm(mcBlank(cfg))} color="#059669" small>+ Tạo đơn mua</Btn>}>
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr><TH>Mã đơn</TH><TH>Ngày</TH><TH>SKU</TH><TH>NCC</TH><TH>Tiền tệ</TH><TH r>SL</TH><TH r>Đơn giá</TH><TH r>Tổng (NT)</TH><TH r>Tỷ giá</TH><TH r>Tổng (VND)</TH><TH r>Giá vốn/SP</TH><TH>Thanh toán</TH>{canEdit&&<TH></TH>}</tr></thead>
+          <tbody>{rows.map(({o,c})=>{const base=skuIndex[o.sku]?.landedCost;const dv=base?c.landedUnit-base:null;
+            return (<tr key={o.id}>
+              <TD m b c="#1D4ED8">{o.id}</TD><TD>{o.date}</TD><TD m>{o.sku}</TD>
+              <TD><span style={{fontSize:10}}>{o.supplier||"—"}</span></TD>
+              <TD><Badge c={o.ccy==="VND"?"#065F46":o.ccy==="USD"?"#1D4ED8":"#B45309"} bg={o.ccy==="VND"?"#D1FAE5":o.ccy==="USD"?"#DBEAFE":"#FEF3C7"}>{CCY_SYM[o.ccy]} {o.ccy}</Badge></TD>
+              <TD r>{num(o.qty).toLocaleString()}</TD>
+              <TD r>{CCY_SYM[o.ccy]}{num(o.unitPrice).toLocaleString()}</TD>
+              <TD r m>{CCY_SYM[o.ccy]}{Math.round(c.totalF).toLocaleString()}</TD>
+              <TD r>{o.ccy==="VND"?"—":num(c.fx).toLocaleString()}</TD>
+              <TD r b>{fmtFull(c.totalVND)}</TD>
+              <TD r>{fmtFull(c.landedUnit)}{dv!==null&&<div style={{fontSize:9,color:dv>0?"#DC2626":"#059669"}}>{dv>0?"+":""}{fmt(dv)} vs nền</div>}</TD>
+              <TD><div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
+                {num(o.depositPct)>0&&<Badge c={o.depositPaid?"#065F46":"#B45309"} bg={o.depositPaid?"#D1FAE5":"#FEF3C7"}>Cọc {o.depositPaid?"✓":pct(c.dep)}</Badge>}
+                <Badge c={o.finalPaid?"#065F46":"#991B1B"} bg={o.finalPaid?"#D1FAE5":"#FEE2E2"}>Nốt {o.finalPaid?"✓":"chờ"}</Badge></div></TD>
+              {canEdit&&<TD><div style={{display:"flex",gap:4}}><Btn onClick={()=>setPoMcForm({...o,lc:{...o.lc}})} color="#6B7280" small>Sửa</Btn><Btn onClick={()=>del(o)} color="#DC2626" small>Xoá</Btn></div></TD>}
+            </tr>);})}
+          {!rows.length&&<tr><TD c="#9CA3AF">Chưa có đơn mua — bấm "Tạo đơn mua".</TD></tr>}</tbody></table></div>
+      </Panel>
+      <Panel title="Lịch thanh toán NCC (Cọc / Nốt)" right={<Badge c="#991B1B" bg="#FEE2E2">Sắp tới: {fmtFull(upcoming)}</Badge>}>
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr><TH>Hạn</TH><TH>Mã đơn</TH><TH>SKU</TH><TH>Loại</TH><TH>Phương thức</TH><TH r>Nguyên tệ</TH><TH r>Số tiền (VND)</TH><TH>Trạng thái</TH></tr></thead>
+          <tbody>{pending.length?pending.map((p,i)=>{const overdue=p.due&&p.due<todayStr();
+            return (<tr key={p.o.id+p.kind+i}>
+              <TD c={overdue?"#DC2626":undefined} b={overdue}>{p.due||"—"}{overdue?" ⚠":""}</TD>
+              <TD m c="#1D4ED8">{p.o.id}</TD><TD m>{p.o.sku}</TD>
+              <TD><Badge c={p.kind==="Cọc"?"#B45309":"#991B1B"} bg={p.kind==="Cọc"?"#FEF3C7":"#FEE2E2"}>{p.kind}</Badge></TD>
+              <TD><span style={{fontSize:10}}>{p.o.payMethod||"—"}</span></TD>
+              <TD r m>{p.o.ccy==="VND"?"—":`${CCY_SYM[p.o.ccy]}${Math.round(p.foreign).toLocaleString()}`}</TD>
+              <TD r b>{fmtFull(p.amount)}</TD>
+              <TD>{(p.payKey==="depositPaid"?canPayDep:canPayFin)?<Btn onClick={()=>setPaid(p.o.id,p.payKey,true)} color="#059669" small>Đã trả</Btn>:<span style={{fontSize:10,color:"#9CA3AF"}}>chờ TT</span>}</TD>
+            </tr>);}):<tr><TD c="#059669" b>✓ Không còn khoản phải trả</TD></tr>}</tbody></table></div>
+      </Panel>
+      {poMcForm&&renderPoMcModal()}
+    </div>);
+  };
+  const renderPoMcModal=()=>{const f=poMcForm;const c=mcCalc(f,cfg);const base=skuIndex[f.sku]?.landedCost;const isVND=f.ccy==="VND";
+    const set=(k,v)=>setPoMcForm(p=>({...p,[k]:v}));
+    const setLc=(k,v)=>setPoMcForm(p=>({...p,lc:{...p.lc,[k]:v}}));
+    const save=()=>{
+      if(!f.sku){showToast("Chọn SKU","bad");return;}
+      if(num(f.qty)<=0){showToast("Số lượng phải > 0","bad");return;}
+      const id=f.id&&f.id.trim()?f.id.trim():`NV${String(Date.now()).slice(-6)}`;
+      const rec={...f,id,qty:num(f.qty),unitPrice:num(f.unitPrice),shipForeign:num(f.shipForeign),moldFee:num(f.moldFee),fx:isVND?1:num(f.fx),depositPct:Math.min(1,Math.max(0,num(f.depositPct))),
+        lc:{shipVN:num(f.lc.shipVN),trustPct:num(f.lc.trustPct),box:num(f.lc.box),manual:num(f.lc.manual),otherPack:num(f.lc.otherPack),labor:num(f.lc.labor),vatPct:num(f.lc.vatPct),other:num(f.lc.other)}};
+      setPurchaseOrders(list=>list.some(o=>o.id===id)?list.map(o=>o.id===id?rec:o):[rec,...list]);
+      addLog("CPMH",id,`Lưu đơn mua ${rec.ccy} · ${rec.sku}`,"","",`${fmt(mcCalc(rec,cfg).totalVND)}₫`,`giá vốn/SP ${fmt(mcCalc(rec,cfg).landedUnit)}₫`);
+      showToast("Đã lưu đơn mua"); setPoMcForm(null);
+    };
+    return (<Modal title={`${purchaseOrders.some(o=>o.id===f.id)?"Sửa":"Tạo"} đơn mua — đa tiền tệ`} onClose={()=>setPoMcForm(null)} wide>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+        <Field label="Mã đơn" hint="Để trống → tự tạo NV…"><Inp value={f.id} onChange={v=>set("id",v)}/></Field>
+        <Field label="Ngày"><Inp value={f.date} onChange={v=>set("date",v)} type="date"/></Field>
+        <Field label="SKU *"><Sel value={f.sku} onChange={v=>set("sku",v)}><option value="">— chọn —</option>{skus.map(s=><option key={s.sku} value={s.sku}>{s.sku}</option>)}</Sel></Field>
+        <Field label="Nhà cung cấp"><Inp value={f.supplier} onChange={v=>set("supplier",v)} placeholder="Tên NCC / xưởng"/></Field>
+        <Field label="Tiền tệ"><Sel value={f.ccy} onChange={v=>setPoMcForm(p=>({...p,ccy:v,fx:v==="VND"?1:(num(p.fx)||num(cfg.fxRates?.[v])||0)}))}>{CCY.map(cc=><option key={cc} value={cc}>{CCY_VN[cc]}</option>)}</Sel></Field>
+        <Field label={isVND?"Tỷ giá (VND = 1)":`Tỷ giá ${f.ccy}→VND`} hint={isVND?"Đơn VND không cần quy đổi":`Gợi ý ${num(cfg.fxRates?.[f.ccy]).toLocaleString()}`}><Inp value={isVND?1:f.fx} onChange={v=>set("fx",v)} type="number"/></Field>
+      </div>
+      <div style={{fontSize:11,fontWeight:700,color:"#6B7280",margin:"6px 0",textTransform:"uppercase"}}>Số lượng & giá — nguyên tệ {CCY_SYM[f.ccy]} {f.ccy}</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10}}>
+        <Field label="Số lượng"><Inp value={f.qty} onChange={v=>set("qty",v)} type="number"/></Field>
+        <Field label={`Đơn giá (${CCY_SYM[f.ccy]})`}><Inp value={f.unitPrice} onChange={v=>set("unitPrice",v)} type="number"/></Field>
+        <Field label={`Ship nội địa NCC (${CCY_SYM[f.ccy]})`}><Inp value={f.shipForeign} onChange={v=>set("shipForeign",v)} type="number"/></Field>
+        <Field label={`Phí khuôn/bản mẫu (${CCY_SYM[f.ccy]})`}><Inp value={f.moldFee} onChange={v=>set("moldFee",v)} type="number"/></Field>
+      </div>
+      <div style={{fontSize:11,fontWeight:700,color:"#6B7280",margin:"6px 0",textTransform:"uppercase"}}>Giá vốn cấu phần — VND/SP (ủy thác & VAT theo %)</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10}}>
+        <Field label="Ship VN (₫/SP)"><Inp value={f.lc.shipVN} onChange={v=>setLc("shipVN",v)} type="number"/></Field>
+        <Field label="Phí ủy thác (%)" hint="0.02 = 2%"><Inp value={f.lc.trustPct} onChange={v=>setLc("trustPct",v)} type="number"/></Field>
+        <Field label="Hộp (₫/SP)"><Inp value={f.lc.box} onChange={v=>setLc("box",v)} type="number"/></Field>
+        <Field label="Giấy HDSD (₫/SP)"><Inp value={f.lc.manual} onChange={v=>setLc("manual",v)} type="number"/></Field>
+        <Field label="Bao bì khác (₫/SP)"><Inp value={f.lc.otherPack} onChange={v=>setLc("otherPack",v)} type="number"/></Field>
+        <Field label="Nhân công (₫/SP)"><Inp value={f.lc.labor} onChange={v=>setLc("labor",v)} type="number"/></Field>
+        <Field label="VAT (%)" hint="0.08 = 8%"><Inp value={f.lc.vatPct} onChange={v=>setLc("vatPct",v)} type="number"/></Field>
+        <Field label="Chi phí khác (₫/SP)"><Inp value={f.lc.other} onChange={v=>setLc("other",v)} type="number"/></Field>
+      </div>
+      <div style={{fontSize:11,fontWeight:700,color:"#6B7280",margin:"6px 0",textTransform:"uppercase"}}>Thanh toán</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10}}>
+        <Field label="% Cọc" hint="0.3 = 30%"><Inp value={f.depositPct} onChange={v=>set("depositPct",v)} type="number"/></Field>
+        <Field label="Hạn trả cọc"><Inp value={f.depositDue||""} onChange={v=>set("depositDue",v)} type="date"/></Field>
+        <Field label="Hạn trả nốt"><Inp value={f.finalDue||""} onChange={v=>set("finalDue",v)} type="date"/></Field>
+        <Field label="Phương thức TT"><Sel value={f.payMethod} onChange={v=>set("payMethod",v)}>{["Tiểu ngạch","Chính ngạch","Chuyển khoản","Cá nhân"].map(m=><option key={m}>{m}</option>)}</Sel></Field>
+      </div>
+      <div style={{background:"#F8FAFC",border:"1px solid #E5E7EB",borderRadius:10,padding:12,marginTop:10,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,fontSize:12}}>
+        <div><div style={{color:"#9CA3AF",fontSize:10}}>Tổng (nguyên tệ)</div><strong>{CCY_SYM[f.ccy]}{Math.round(c.totalF).toLocaleString()}</strong></div>
+        <div><div style={{color:"#9CA3AF",fontSize:10}}>Tổng (VND)</div><strong>{fmtFull(c.totalVND)}</strong></div>
+        <div><div style={{color:"#9CA3AF",fontSize:10}}>Cọc / Nốt (VND)</div><strong>{fmt(c.depositVND)} / {fmt(c.finalVND)}</strong></div>
+        <div><div style={{color:"#9CA3AF",fontSize:10}}>Giá vốn/SP (VND)</div><strong style={{color:"#7C3AED"}}>{fmtFull(c.landedUnit)}</strong>{base?<span style={{fontSize:10,color:c.landedUnit>base?"#DC2626":"#059669"}}> ({c.landedUnit>base?"+":""}{fmt(c.landedUnit-base)} vs nền)</span>:null}</div>
+      </div>
+      <div style={{fontSize:10,color:"#9CA3AF",marginTop:6}}>Giá vốn/SP = (giá hàng + ship NCC → VND)/SL + ủy thác% + ship VN + hộp + HDSD + bao bì + nhân công + khuôn/SL, rồi × (1+VAT%).</div>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:12}}>
+        <Btn onClick={()=>setPoMcForm(null)} color="#6B7280">Huỷ</Btn>
+        <Btn onClick={save} color="#059669">Lưu đơn mua</Btn>
+      </div>
+    </Modal>);
+  };
+
   const modals=(<>
     {/* Confirm dialog dùng chung — thay window.confirm (spec §29) */}
     {confirmReq&&(()=>{const r=confirmReq;
@@ -2831,6 +2994,11 @@ export default function App(){
         <Field label="Phí sàn — UHERO"><Inp value={cfgForm.feeRate?.UHERO} onChange={v=>setCfgForm(p=>({...p,feeRate:{...p.feeRate,UHERO:v}}))} type="number"/></Field>
         <Field label="Phí sàn — MONA MASK"><Inp value={cfgForm.feeRate?.["MONA MASK"]} onChange={v=>setCfgForm(p=>({...p,feeRate:{...p.feeRate,"MONA MASK":v}}))} type="number"/></Field>
       </div>
+      <div style={{fontSize:11,fontWeight:700,color:"#6B7280",margin:"8px 0",textTransform:"uppercase"}}>Tỷ giá mua hàng (gợi ý → VND, sửa được ở từng đơn)</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <Field label="CNY → VND (Tệ)" hint="Dùng làm mặc định khi tạo đơn mua bằng Tệ"><Inp value={cfgForm.fxRates?.CNY} onChange={v=>setCfgForm(p=>({...p,fxRates:{...p.fxRates,CNY:v}}))} type="number"/></Field>
+        <Field label="USD → VND"><Inp value={cfgForm.fxRates?.USD} onChange={v=>setCfgForm(p=>({...p,fxRates:{...p.fxRates,USD:v}}))} type="number"/></Field>
+      </div>
       <div style={{fontSize:11,fontWeight:700,color:"#6B7280",margin:"8px 0",textTransform:"uppercase"}}>Ngưỡng</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
         <Field label="Ngưỡng Thừa hàng (ngày cover)"><Inp value={cfgForm.excessDays} onChange={v=>setCfgForm(p=>({...p,excessDays:v}))} type="number"/></Field>
@@ -2842,6 +3010,7 @@ export default function App(){
         <Btn onClick={()=>setCfgModal(false)} color="#6B7280">Hủy</Btn>
         <Btn onClick={()=>{const n={...cfg,cashBalance:num(cfgForm.cashBalance),dso:num(cfgForm.dso),excessDays:num(cfgForm.excessDays)||90,liqDays:num(cfgForm.liqDays)||120,targetCoverDefault:num(cfgForm.targetCoverDefault)||45,minSafetyDays:num(cfgForm.minSafetyDays)||5,
           feeRate:Object.fromEntries(BRANDS.map(b=>[b,Number(cfgForm.feeRate?.[b])||0.32])),
+          fxRates:{CNY:num(cfgForm.fxRates?.CNY)||DEFAULT_CFG.fxRates.CNY,USD:num(cfgForm.fxRates?.USD)||DEFAULT_CFG.fxRates.USD},
           brandBudgets:cfg.brandBudgets};
           setCfg(n);
           if(cfgForm._monthBudgets){setBudgets(prev=>{let nb=[...prev];
@@ -2956,7 +3125,7 @@ export default function App(){
         {tab==="data"&&renderData()}{tab==="ceo"&&renderCEO()}{tab==="cap"&&renderCap()}{tab==="wb"&&renderWB()}
         {tab==="cal"&&renderCal()}{tab==="var"&&renderVar()}{tab==="plan"&&renderPlan()}
         {tab==="leader"&&renderLeader()}{tab==="approve"&&renderApprove()}
-        {tab==="po"&&renderPO()}{tab==="supplier"&&renderSup()}{tab==="cash"&&renderCash()}
+        {tab==="po"&&renderPO()}{tab==="supplier"&&renderSup()}{tab==="cash"&&renderCash()}{tab==="cpmh"&&renderCPMH()}
         {tab==="audit"&&renderAudit()}{tab==="sync"&&renderSync()}{tab==="inv"&&renderInv()}
       </div>
     </main>
