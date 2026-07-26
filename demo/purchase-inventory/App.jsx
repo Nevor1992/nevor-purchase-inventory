@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { Package, AlertTriangle, ShoppingCart, BarChart3, DollarSign, Truck, ChevronRight, ChevronDown, Search, CheckCircle, XCircle, Clock, Zap, Users, Box, Target, ThumbsUp, X, Upload, Database, History, Settings, Wallet, Archive, Layers, ShieldAlert, ListChecks, Calendar, TrendingUp, FileText } from "lucide-react";
+import { Package, AlertTriangle, ShoppingCart, BarChart3, DollarSign, Truck, ChevronRight, ChevronDown, Search, CheckCircle, XCircle, Clock, Zap, Users, Box, Target, ThumbsUp, X, Upload, Database, History, Settings, Wallet, Archive, Layers, ShieldAlert, ListChecks, Calendar, TrendingUp, FileText, HelpCircle, BookOpen } from "lucide-react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 
@@ -720,6 +720,59 @@ const PO_MC_SEED=[
   {id:"NV000165",date:_D(-2),sku:"BM01",supplier:"NCC nội địa VN (DEMO)",ccy:"VND",qty:1000,unitPrice:9000,shipForeign:0,fx:1,moldFee:0,depositPct:0,depositDue:null,finalDue:_D(3),payMethod:"Chuyển khoản",depositPaid:false,finalPaid:false,status:"Ordered",lc:{shipVN:0,trustPct:0,box:0,manual:0,otherPack:0,labor:400,vatPct:0.08,other:0}},
 ];
 
+/* ═══════════════════════════════════════════════════════════════
+   BẢNG THUẬT NGỮ (tham chiếu nhanh cho dev — bản đầy đủ hiển thị ở tab "Hướng Dẫn")
+   • ATP  = Available To Promise — tồn KHẢ DỤNG (đã trừ hàng giữ chỗ), mới được hứa bán.
+   • Cover= số NGÀY còn bán được với tồn hiện tại = tồn / (bán mỗi ngày).
+   • DIO  = Days Inventory Outstanding — số ngày vốn nằm trong hàng tồn.
+   • CCC  = Cash Conversion Cycle = DIO + DSO − DPO — số ngày tiền bị "kẹt" trong 1 vòng.
+   • DSO/DPO = số ngày THU tiền / số ngày được NCC cho NỢ.
+   • FDS  = tốc độ bán bình quân (sản phẩm/ngày) — dùng cho dự báo & cover.
+   • MOQ  = Minimum Order Quantity — số lượng đặt tối thiểu NCC yêu cầu.
+   • PR   = Purchase Request (đề xuất mua, còn chờ duyệt) → PO = Purchase Order (đơn đã phát hành cho NCC).
+   • Landed cost = GIÁ VỐN đã gồm mọi chi phí về đến kho (hàng + ship + thuế + bao bì + nhân công…).
+   • Cọc/Nốt = trả trước 1 phần / trả nốt phần còn lại. FX = tỷ giá quy ngoại tệ → VND.
+   • POS Map: alias (đổi tên cùng 1 SKU) · combo (1 mã = nhiều SKU) · gift (hàng tặng, trừ tồn, KHÔNG tính doanh thu).
+   ═══════════════════════════════════════════════════════════════ */
+/* Dữ liệu bảng thuật ngữ hiển thị trong tab Hướng Dẫn (nhóm · thuật ngữ · giải nghĩa dễ hiểu) */
+const GLOSSARY=[
+ {g:"Kho & Bán",t:"Tồn khả dụng (ATP)",d:"Available To Promise — số tồn THỰC SỰ bán được, đã trừ hàng đang giữ chỗ/đơn treo. Chỉ nên hứa giao trong phạm vi ATP."},
+ {g:"Kho & Bán",t:"Cover (ngày cover)",d:"Với tồn hiện tại còn bán được bao nhiêu NGÀY = tồn ÷ tốc độ bán/ngày. Cover thấp → sắp hết; cover cao → thừa hàng."},
+ {g:"Kho & Bán",t:"Tốc độ bán (FDS · sp/ngày)",d:"Số sản phẩm bán bình quân mỗi ngày. Là nền để tính cover, dự báo và số cần mua."},
+ {g:"Kho & Bán",t:"Safety stock / Safety days",d:"Tồn an toàn — lượng đệm để không hết hàng trong lúc chờ hàng mới về (theo lead time & độ dao động)."},
+ {g:"Kho & Bán",t:"DIO",d:"Days Inventory Outstanding — số ngày vốn 'nằm' trong hàng tồn. DIO càng cao → vốn chôn càng lâu."},
+ {g:"Kho & Bán",t:"Healthy / Watch / Excess / Liquidate",d:"Sức khoẻ tồn: Khoẻ / Theo dõi / Thừa hàng / cần Xả tồn — dựa trên cover so với ngưỡng cấu hình."},
+ {g:"Mua & NCC",t:"MOQ",d:"Minimum Order Quantity — số lượng đặt tối thiểu NCC yêu cầu. Có khi phải mua dư hơn nhu cầu để đủ MOQ."},
+ {g:"Mua & NCC",t:"Lead time",d:"Số ngày từ lúc đặt hàng đến lúc hàng về kho. Dài thì phải đặt sớm hơn."},
+ {g:"Mua & NCC",t:"PR (Đề xuất mua)",d:"Purchase Request — phiếu đề xuất mua, phải qua duyệt (Leader → CEO) trước khi thành PO."},
+ {g:"Mua & NCC",t:"PO (Đơn đặt hàng)",d:"Purchase Order — đơn đã phát hành cho NCC. Đi qua các trạng thái: đặt → cọc → sản xuất → QC → vận chuyển → về kho → nhập POS."},
+ {g:"Mua & NCC",t:"ETA",d:"Estimated Time of Arrival — ngày DỰ KIẾN hàng về. 'ETA UNKNOWN' = quá hạn mà NCC chưa xác nhận lại → không tính vào hàng đang về."},
+ {g:"Mua & NCC",t:"Đang về / Committed",d:"Đang về (Incoming/In-transit) = PO chắc chắn sẽ về. Committed = đã cam kết chi (đã phát đơn, chưa huỷ/đóng)."},
+ {g:"Mua & NCC",t:"Nhóm khuyến nghị mua (Buy class)",d:"Gợi ý hành động: Mua ngay / Mua trong tuần / Mua sau / Đàm phán MOQ / Đổi NCC / Không mua / Chuyển kho."},
+ {g:"Mua & NCC",t:"Giá vốn (Landed cost)",d:"Giá vốn 1 sản phẩm ĐÃ về đến kho, gồm: giá hàng + ship nước ngoài + ship VN + phí ủy thác + bao bì + nhân công + VAT + phí khuôn."},
+ {g:"Tài chính",t:"Cọc / Nốt",d:"Cọc = trả trước một phần (vd 30%) khi đặt; Nốt = trả phần còn lại (thường trước khi giao/QC)."},
+ {g:"Tài chính",t:"Tỷ giá (FX)",d:"Hệ số quy đổi ngoại tệ → VND (vd 1 Tệ = 3.930đ). Lưu theo TỪNG đơn vì tỷ giá đổi theo thời điểm. Đơn VND = 1."},
+ {g:"Tài chính",t:"Tiểu ngạch / Chính ngạch",d:"Hai hình thức nhập khẩu: tiểu ngạch (đường biên, thủ tục nhẹ, rủi ro cao hơn) vs chính ngạch (hải quan chính thức, có hoá đơn/VAT)."},
+ {g:"Tài chính",t:"CCC (vòng quay tiền)",d:"Cash Conversion Cycle = DIO + DSO − DPO — số ngày tiền bị 'kẹt' trong 1 vòng kinh doanh. Càng thấp càng khoẻ."},
+ {g:"Tài chính",t:"Ngân sách & Phí sàn",d:"Ngân sách = hạn mức tiền mua hàng mỗi THÁNG theo brand. Phí sàn = % sàn TMĐT thu trên doanh thu (vd 32%)."},
+ {g:"Tài chính",t:"ROIC",d:"Return On Invested Capital — lợi nhuận tạo ra trên mỗi đồng vốn bỏ vào hàng; ưu tiên mua SKU ROIC cao."},
+ {g:"POS & Ánh xạ",t:"POS Sync",d:"Đồng bộ số BÁN/tồn từ phần mềm bán hàng (Pancake). Tool đọc file xuất, khớp mã rồi cập nhật số bán."},
+ {g:"POS & Ánh xạ",t:"POS Map: Alias / Combo / Gift",d:"Ánh xạ mã trên POS về SKU nội bộ: Alias = cùng SKU khác tên; Combo = 1 mã gồm nhiều SKU; Gift = hàng tặng (trừ tồn, KHÔNG tính doanh thu)."},
+ {g:"POS & Ánh xạ",t:"Đối soát (Reconciliation)",d:"So khớp tồn POS với tồn hệ thống; lệch thì vào hàng đợi xử lý, KHÔNG tự ghi đè."},
+ {g:"POS & Ánh xạ",t:"Hệ số mùa vụ",d:"Số nhân điều chỉnh dự báo theo mùa: >1 = cao điểm (nhân số bán lên), <1 = thấp điểm."},
+ {g:"POS & Ánh xạ",t:"Đền bù",d:"Ghi nhận hàng lỗi/thiếu/mất và thu hồi giá trị từ NCC / đơn vị vận chuyển / sàn."},
+];
+const HELP_FLOW=[
+ {n:1,t:"Chuẩn hoá dữ liệu",tab:"Dữ Liệu",d:"Điền các trường còn thiếu (giá bán, lead time, MOQ, giá vốn…). Ô thiếu hiện '—', tool KHÔNG đoán."},
+ {n:2,t:"Quyết định mua",tab:"Cần Mua",d:"Xem SKU cần mua gấp / nguy cơ hết hàng, số lượng gợi ý theo cover & MOQ → tạo Đề xuất mua (PR)."},
+ {n:3,t:"Duyệt nhiều cấp",tab:"Leader Duyệt → CEO Duyệt",d:"Leader duyệt/chỉnh → CEO duyệt cuối. Vượt ngân sách sẽ được cảnh báo."},
+ {n:4,t:"Phát hành & theo dõi PO",tab:"PO Tracking",d:"Tạo PO cho NCC, cập nhật trạng thái từ đặt → cọc → sản xuất → QC → vận chuyển → về kho."},
+ {n:5,t:"Nhận hàng · QC · nhập POS",tab:"Kho & ATP · PO Tracking",d:"Nhận hàng (Goods Receipt), kiểm QC, rồi nhập vào POS. Lệch nhận hàng → hàng đợi xử lý."},
+ {n:6,t:"Đồng bộ số bán",tab:"POS Sync",d:"Tải file bán hàng Pancake (theo sản phẩm hoặc theo mẫu mã) → xem preview → chọn kỳ 7/30/60 ngày → áp dụng."},
+ {n:7,t:"Chi phí mua hàng",tab:"Chi phí MH",d:"Nhập đơn mua đa tiền tệ (CNY/USD/VND) + tỷ giá → giá vốn cấu phần + lịch thanh toán cọc/nốt."},
+ {n:8,t:"Sau nhận hàng",tab:"Đền Bù · Đóng gói·PO · Mùa Vụ",d:"Ghi đền bù hàng lỗi; xuất PO song ngữ gửi xưởng; phân tích mùa vụ để mua đón mùa."},
+];
+
 /* ═══ #3 Đền bù · #5 Đóng gói/PO song ngữ · #6 Mùa vụ — bổ sung từ file thu mua thật ═══ */
 const CLAIM_REASONS=["NCC phát thiếu","Hàng lỗi","ĐVVC làm mất/hư","Sàn báo lỗi","Giao sai mẫu","Khác"];
 const CLAIM_PARTIES=["NCC","Đơn vị vận chuyển","Sàn TMĐT","Nội bộ"];
@@ -1143,6 +1196,7 @@ export default function App(){
   const [claimForm,setClaimForm]=useState(null); const [packForm,setPackForm]=useState(null);
   const [poDocId,setPoDocId]=useState(null);     // đơn đang xuất PO song ngữ
   const [trendSku,setTrendSku]=useState("DCG04");
+  const [helpQ,setHelpQ]=useState("");   // ô tìm thuật ngữ trong tab Hướng Dẫn
   const [importPreview,setImportPreview]=useState(null);
   const [allocModal,setAllocModal]=useState(null); const [allocQty,setAllocQty]=useState(""); const [allocReason,setAllocReason]=useState("");
   const [variantModal,setVariantModal]=useState(null);
@@ -1153,6 +1207,7 @@ export default function App(){
   const openMeta=s=>{setMetaModal(s.sku);setMetaForm({skuType:s.skuType??"",sellPrice:s.sellPrice??"",moq:s.moq??"",packSize:s.packSize??"",leadTime:s.leadTime??"",targetCover:s.targetCover??"",productStatus:s.productStatus??"",mainSupplier:s.mainSupplier??"",owner:s.owner??"",sold7:s.sold7??"",sold60:s.sold60??""});};
 
   const TABS=[
+    {id:"help",label:"Hướng Dẫn",icon:HelpCircle},
     {id:"data",label:"Dữ Liệu",icon:ListChecks,badge:Math.round((1-readiness.buy)*readiness.n)||undefined},
     {id:"ceo",label:"CEO Dashboard",icon:BarChart3,badge:(prList.filter(p=>p.status==="SUBMITTED_TO_CEO").length+mismatchPOs.length+latePOs.length)||undefined},
     {id:"cap",label:"Vốn Chết",icon:Archive,badge:liquidate.length||undefined},
@@ -1175,16 +1230,16 @@ export default function App(){
   ];
   /* ═══ P1.7: Role-based Navigation — nav là UX, quyền thật vẫn check trong handler ═══ */
   const TAB_ACCESS={
-    CEO:["ceo","approve","cap","po","cash","cpmh","wb","cal","var","trend","plan","leader","supplier","pack","data","audit","sync","inv","claims"],
-    Leader:["leader","wb","cal","var","trend","plan","data","cap","inv"],
-    Purchasing:["wb","cal","po","cpmh","supplier","pack","trend","data","sync","leader","inv","claims"],
-    Warehouse:["inv","po","sync","claims"],
-    QC:["inv","po"],
-    Accounting:["cash","cpmh","po","claims","audit"],
-    "Sales Planner":["plan","var","trend","inv"],
-    "E-commerce Lead":["plan","var","trend","inv"],
-    "Growth Lead":["plan","var","trend","inv","ceo"],
-    Viewer:["ceo","cap","wb","cal","var","trend","plan","po","supplier","pack","cash","data","inv","claims"],
+    CEO:["help","ceo","approve","cap","po","cash","cpmh","wb","cal","var","trend","plan","leader","supplier","pack","data","audit","sync","inv","claims"],
+    Leader:["help","leader","wb","cal","var","trend","plan","data","cap","inv"],
+    Purchasing:["help","wb","cal","po","cpmh","supplier","pack","trend","data","sync","leader","inv","claims"],
+    Warehouse:["help","inv","po","sync","claims"],
+    QC:["help","inv","po"],
+    Accounting:["help","cash","cpmh","po","claims","audit"],
+    "Sales Planner":["help","plan","var","trend","inv"],
+    "E-commerce Lead":["help","plan","var","trend","inv"],
+    "Growth Lead":["help","plan","var","trend","inv","ceo"],
+    Viewer:["help","ceo","cap","wb","cal","var","trend","plan","po","supplier","pack","cash","data","inv","claims"],
   };
   const DEFAULT_TAB={CEO:"ceo",Leader:"leader",Purchasing:"wb",Warehouse:"inv",QC:"po",Accounting:"cash","Sales Planner":"plan","E-commerce Lead":"plan","Growth Lead":"plan",Viewer:"ceo"};
   const visibleTabs=TABS.filter(t=>(TAB_ACCESS[role]||[]).includes(t.id));
@@ -2485,6 +2540,65 @@ export default function App(){
     </Modal>);
   };
 
+  /* ═══ Hướng Dẫn — cách dùng theo luồng/vai + bảng thuật ngữ (giải nghĩa từ khó) ═══ */
+  const renderHelp=()=>{
+    const q=helpQ.trim().toLowerCase();
+    const gl=q?GLOSSARY.filter(x=>x.t.toLowerCase().includes(q)||x.d.toLowerCase().includes(q)||x.g.toLowerCase().includes(q)):GLOSSARY;
+    const groups=[...new Set(gl.map(x=>x.g))];
+    const goTab=id=>{if((TAB_ACCESS[role]||[]).includes(id))setTab(id);else showToast("Vai hiện tại không có tab này — đổi vai ở góc trái","warn");};
+    return (<div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <Note tone="info"><span><strong>Đây là bản demo trải nghiệm luồng</strong> — dữ liệu là mẫu, thao tác lưu trong trình duyệt của bạn. Đổi <strong>vai</strong> ở ô "DEMO ROLE SWITCH" (góc trái) để xem quyền & giao diện thay đổi. Mỗi vai chỉ thấy các tab liên quan.</span></Note>
+
+      <Panel title="Luồng chuẩn — 8 bước từ dữ liệu đến sau nhận hàng">
+        <div style={{padding:12,display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:10}}>
+          {HELP_FLOW.map(s=>(<div key={s.n} style={{display:"flex",gap:10,border:"1px solid #E5E7EB",borderRadius:10,padding:10}}>
+            <div style={{width:26,height:26,flexShrink:0,borderRadius:"50%",background:"#EDE9FE",color:"#5B21B6",fontWeight:800,fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>{s.n}</div>
+            <div><div style={{fontWeight:700,fontSize:12.5}}>{s.t}</div>
+              <div style={{fontSize:11,color:"#6B7280",margin:"2px 0 5px"}}>{s.d}</div>
+              <span style={{fontSize:10,color:"#4338CA",background:"#EEF2FF",padding:"2px 7px",borderRadius:5,fontWeight:600}}>Tab: {s.tab}</span></div>
+          </div>))}
+        </div>
+      </Panel>
+
+      <Panel title="Ai làm gì? (theo vai)">
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr><TH>Vai</TH><TH>Trải nghiệm chính</TH></tr></thead>
+          <tbody>
+            {[["CEO","Xem tổng quan, duyệt PR cuối, theo dõi ngân sách & dòng tiền — thấy TẤT CẢ tab."],
+              ["Leader","Duyệt đề xuất mua cấp 1, chỉnh số lượng, lập Sales Plan."],
+              ["Purchasing","Tạo đề xuất mua & PO, quản lý NCC, nhập POS, xuất PO song ngữ, chi phí mua hàng."],
+              ["Warehouse","Nhận hàng, chuyển kho, đối soát tồn, ghi đền bù."],
+              ["QC","Kiểm chất lượng cho PO."],
+              ["Accounting","Xác nhận cọc/nốt, ngân sách, chi phí thực, chi phí mua hàng."],
+              ["Sales Planner / E-com / Growth","Lập & duyệt kế hoạch bán, phân tích biến thể & mùa vụ."],
+              ["Viewer","Chỉ xem — không thao tác."]].map(([r,d])=>(<tr key={r}><TD b c="#1D4ED8">{r}</TD><TD><span style={{fontSize:11}}>{d}</span></TD></tr>))}
+          </tbody></table></div>
+      </Panel>
+
+      <Panel title={`Bảng thuật ngữ — giải nghĩa từ khó (${gl.length})`} right={<div style={{position:"relative"}}><Search size={12} style={{position:"absolute",left:8,top:7,color:"#9CA3AF"}}/><input value={helpQ} onChange={e=>setHelpQ(e.target.value)} placeholder="Tìm thuật ngữ…" style={{padding:"5px 10px 5px 26px",borderRadius:8,border:"1px solid #D1D5DB",fontSize:11,width:180}}/></div>}>
+        {groups.length?groups.map(g=>(<div key={g}>
+          <div style={{padding:"8px 14px",fontSize:11,fontWeight:800,color:"#5B21B6",background:"#FAF5FF",borderBottom:"1px solid #F3E8FF",textTransform:"uppercase",letterSpacing:0.4}}>{g}</div>
+          <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>
+            {gl.filter(x=>x.g===g).map(x=>(<tr key={x.t}>
+              <td style={{padding:"8px 14px",fontSize:12,fontWeight:700,color:"#111827",width:230,verticalAlign:"top",borderBottom:"1px solid #F3F4F6"}}>{x.t}</td>
+              <td style={{padding:"8px 14px",fontSize:11.5,color:"#374151",borderBottom:"1px solid #F3F4F6"}}>{x.d}</td>
+            </tr>))}
+          </tbody></table>
+        </div>)):<div style={{padding:16,fontSize:12,color:"#9CA3AF"}}>Không tìm thấy thuật ngữ khớp "{helpQ}".</div>}
+      </Panel>
+
+      <Panel title="Câu hỏi thường gặp">
+        <div style={{padding:14,display:"flex",flexDirection:"column",gap:10,fontSize:12}}>
+          <div><strong>Vì sao nhiều ô hiện "—"?</strong><div style={{color:"#6B7280"}}>Tool chỉ tính khi CÓ dữ liệu — ô "—" là đang thiếu, cần điền ở tab Dữ Liệu, chứ không phải bằng 0.</div></div>
+          <div><strong>Tải lại trang có mất dữ liệu không?</strong><div style={{color:"#6B7280"}}>Không — thao tác lưu trong trình duyệt (Local Storage) của riêng bạn. Muốn về mặc định: tab Dữ Liệu → mục Reset.</div></div>
+          <div><strong>Đổi vai ở đâu?</strong><div style={{color:"#6B7280"}}>Ô "DEMO ROLE SWITCH" góc trên bên trái. Mỗi vai thấy tập tab và quyền thao tác khác nhau.</div></div>
+          <div><strong>Muốn nhảy tới một bước?</strong><div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
+            {[["wb","Cần Mua"],["sync","POS Sync"],["cpmh","Chi phí MH"],["claims","Đền Bù"],["pack","Đóng gói·PO"],["trend","Mùa Vụ"]].map(([id,lb])=>(<Btn key={id} onClick={()=>goTab(id)} color="#4338CA" small>{lb}</Btn>))}
+          </div></div>
+        </div>
+      </Panel>
+    </div>);
+  };
   /* ═══ #3 Sổ đền bù NCC / vận chuyển (mirror "Đối soát kho") ═══ */
   const renderClaims=()=>{
     const canEdit=can("po.goodsReceipt")||can("po.resolveMismatch")||can("po.create");
@@ -3325,7 +3439,7 @@ export default function App(){
         </div>
       </header>
       <div style={{padding:"14px 18px",maxWidth:1680}}>
-        {tab==="data"&&renderData()}{tab==="ceo"&&renderCEO()}{tab==="cap"&&renderCap()}{tab==="wb"&&renderWB()}
+        {tab==="help"&&renderHelp()}{tab==="data"&&renderData()}{tab==="ceo"&&renderCEO()}{tab==="cap"&&renderCap()}{tab==="wb"&&renderWB()}
         {tab==="cal"&&renderCal()}{tab==="var"&&renderVar()}{tab==="plan"&&renderPlan()}
         {tab==="leader"&&renderLeader()}{tab==="approve"&&renderApprove()}
         {tab==="po"&&renderPO()}{tab==="supplier"&&renderSup()}{tab==="cash"&&renderCash()}{tab==="cpmh"&&renderCPMH()}{tab==="trend"&&renderTrend()}{tab==="pack"&&renderPack()}{tab==="claims"&&renderClaims()}
