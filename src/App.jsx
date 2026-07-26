@@ -5,7 +5,7 @@ import {
   MessageSquare, Paperclip, History, Users, Filter, LayoutList, LayoutGrid,
   Gauge, Pin, Send, Edit3, LogOut, ChevronDown, ChevronLeft,
   ChevronRight, ChevronsLeft, CheckCircle2, PauseCircle, RotateCcw,
-  FileText, ExternalLink, Repeat, Trash2, PinOff, CornerDownRight, Star, Save, Lock, Download
+  FileText, ExternalLink, Repeat, Trash2, PinOff, CornerDownRight, Star, Save, Lock, Download, BookOpen
 } from "lucide-react";
 import { btnPri, btnSec, btnGhost, btnDanger, inputCls, cardCls, popoverCls, STATUS_TONE, PRIORITY_TONE } from "./ui/tokens.js";
 import { PageHeader, Skeleton, SkeletonRows, DeadlineChip, Dot, Tooltip, ErrorBoundary } from "./ui/primitives.jsx";
@@ -3510,6 +3510,181 @@ function DocumentsPage() {
     </div>
   );
 }
+
+/* ============================================================
+   Hướng dẫn sử dụng — trang trợ giúp trong app (accordion)
+   ============================================================ */
+function HelpPage() {
+  const { db, me } = useApp();
+  const [open, setOpen] = useState(() => new Set(["start"]));
+  const [q, setQ] = useState("");
+  const toggle = (id) => setOpen((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  /* ---- helper hiển thị ---- */
+  const El = ({ children }) => <span className="rounded bg-zinc-100 px-1 py-0.5 text-[12px] font-medium text-zinc-700">{children}</span>;
+  const Steps = ({ items }) => <ol className="mt-1 space-y-1.5">{items.map((it, i) => <li key={i} className="flex gap-2 text-[13px] text-zinc-600"><span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[10px] font-semibold text-white">{i + 1}</span><span>{it}</span></li>)}</ol>;
+  const Tip = ({ children, tone = "amber" }) => <p className={`mt-2 rounded-lg px-3 py-2 text-[12px] ${tone === "amber" ? "bg-amber-50 text-amber-700" : tone === "green" ? "bg-emerald-50 text-emerald-700" : "bg-sky-50 text-sky-700"}`}>{children}</p>;
+  const Bullets = ({ items }) => <ul className="mt-1 space-y-1 text-[13px] text-zinc-600">{items.map((it, i) => <li key={i} className="flex gap-2"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-zinc-400" />{it}</li>)}</ul>;
+
+  const sections = [
+    { id: "start", icon: Home, title: "Bắt đầu nhanh", keywords: "tổng quan menu đăng nhập", body: (
+      <div className="space-y-2">
+        <p className="text-[13px] text-zinc-600">NovixWork là công cụ quản lý công việc và phối hợp liên phòng ban. Mọi việc đều xoay quanh 3 thứ: <b>Công việc (Task)</b>, <b>Yêu cầu phối hợp (Request)</b> và <b>Dự án (Project)</b>.</p>
+        <Bullets items={[
+          <><b>Trang chủ</b>: việc cần làm hôm nay, sắp đến hạn, quá hạn, chờ bạn duyệt.</>,
+          <><b>Công việc của tôi</b>: tất cả việc bạn phụ trách/phối hợp/đã giao.</>,
+          <>Nút <El>+ Tạo công việc</El> ở góc trên phải để tạo task nhanh.</>,
+          <>Biểu tượng chuông 🔔: thông báo (được giao việc, cần duyệt, quá hạn…).</>,
+          <>Ô tìm kiếm trên cùng: tìm nhanh công việc, dự án, yêu cầu.</>,
+        ]} />
+        <Tip tone="sky">Muốn xem thử với dữ liệu mẫu (không cần đăng nhập)? Thêm <El>?demo=1</El> vào cuối đường link.</Tip>
+      </div>
+    ) },
+    { id: "task", icon: CheckSquare, title: "Công việc (Task) — tạo, làm, gửi duyệt", keywords: "task công việc gửi duyệt kết quả thực tế deadline trạng thái", body: (
+      <div className="space-y-2">
+        <p className="text-[13px] font-medium text-zinc-700">Tạo công việc</p>
+        <Steps items={[
+          <>Bấm <El>+ Tạo công việc</El>.</>,
+          <>Điền các trường <b>bắt buộc</b>: Tên, Phòng ban phụ trách, Người phụ trách, Deadline.</>,
+          <>Các mục khác (mô tả, kết quả kỳ vọng, checklist, phối hợp…) là tùy chọn.</>,
+          <>Bấm <El>Tạo</El>. Nếu nút mờ, còn thiếu trường bắt buộc — dòng nhắc sẽ chỉ ra.</>,
+        ]} />
+        <Tip>Cần <b>phòng khác</b> làm giúp? Đừng giao task trực tiếp — hãy dùng <b>Yêu cầu phối hợp</b> (xem mục dưới).</Tip>
+        <p className="mt-2 text-[13px] font-medium text-zinc-700">Vòng đời trạng thái</p>
+        <p className="text-[13px] text-zinc-600">Chưa bắt đầu → Đang làm → <b>Chờ duyệt</b> → Hoàn thành. (Có thể Tạm dừng, hoặc bị Yêu cầu chỉnh sửa.)</p>
+        <p className="mt-2 text-[13px] font-medium text-zinc-700">Gửi duyệt / bàn giao</p>
+        <Steps items={[
+          <>Mở task, cuộn tới ô <El>Kết quả thực tế</El>.</>,
+          <>Điền <b>Tóm tắt</b> việc đã làm.</>,
+          <>Dán <b>link</b> kết quả rồi bấm <El>Thêm</El> (hoặc đính kèm file).</>,
+          <>Khi hiện dòng xanh "Đủ điều kiện bàn giao", cuộn lên đầu bấm <El>Gửi duyệt</El>.</>,
+        ]} />
+        <Tip tone="green">Người duyệt sẽ thấy việc trong <b>Chờ duyệt</b> để bấm Duyệt hoàn thành hoặc Yêu cầu chỉnh sửa.</Tip>
+        <Bullets items={[
+          <><b>Checklist</b>: chia nhỏ việc; có thể giao từng mục cho người phối hợp.</>,
+          <><b>Bình luận</b>: gõ <El>@Tên</El> để nhắc đúng người (chỉ gợi ý người có quyền xem việc).</>,
+          <><b>Deadline & quá hạn</b>: quá hạn sẽ được tô đỏ và nhắc; task ưu tiên cao/khẩn còn báo lên leader/CEO.</>,
+        ]} />
+      </div>
+    ) },
+    { id: "request", icon: ArrowLeftRight, title: "Yêu cầu phối hợp (Request) — làm việc với phòng khác", keywords: "yêu cầu phối hợp liên phòng ban tiếp nhận deadline sla bàn giao nghiệm thu", body: (
+      <div className="space-y-2">
+        <Tip>Nguyên tắc: <b>không</b> tự tạo task giao thẳng cho nhân sự phòng khác. Việc cần phòng khác xử lý phải đi qua <b>Yêu cầu phối hợp</b> để có cam kết + deadline 2 bên + người chịu trách nhiệm rõ.</Tip>
+        <p className="text-[13px] font-medium text-zinc-700">Luồng chuẩn</p>
+        <Steps items={[
+          <><b>Bên gửi</b> bấm <El>Tạo yêu cầu</El> (có thể chọn <b>Mẫu</b>: Content→Media, Booking→Kho…), chọn phòng nhận + deadline mong muốn + kết quả cần bàn giao.</>,
+          <><b>Phòng nhận</b> mở yêu cầu → <El>Tiếp nhận</El>: chọn <b>Người xử lý (Handler)</b> và deadline. Nếu deadline khác → hai bên thoả thuận đến khi chốt.</>,
+          <>Người xử lý làm việc (task phối hợp được tạo tự động) rồi <El>Bàn giao kết quả</El> (bắt buộc có Kết quả thực tế trong task).</>,
+          <><b>Bên gửi</b> <El>Xác nhận hoàn thành</El> (nghiệm thu) hoặc <El>Yêu cầu chỉnh sửa</El>.</>,
+        ]} />
+        <Bullets items={[
+          <><b>Đầu mối tiếp nhận</b> (điều phối) khác <b>Người xử lý</b> (trực tiếp làm).</>,
+          <><b>SLA</b>: mỗi yêu cầu hiển thị Trong hạn / Sắp quá / Quá SLA theo từng pha (tiếp nhận, chốt deadline, thực hiện, nghiệm thu).</>,
+          <><b>Escalation</b>: quá hạn sẽ báo dần — đầu mối → leader 2 phòng → CEO (chỉ khi nghiêm trọng).</>,
+        ]} />
+        <p className="mt-2 text-[13px] font-medium text-zinc-700">Đổi deadline sau khi đã chốt</p>
+        <p className="text-[13px] text-zinc-600">Không sửa trực tiếp. Bấm <El>Đề xuất đổi deadline</El> → bên kia duyệt thì deadline mới áp dụng cho cả Yêu cầu và Task. Khi khẩn cấp, CEO có thể <b>điều chỉnh trực tiếp</b> (có ghi lý do + báo 2 phòng).</p>
+      </div>
+    ) },
+    { id: "project", icon: FolderKanban, title: "Dự án (Project) — mục tiêu liên phòng ban", keywords: "dự án milestone sức khỏe blocker dependency thành viên quyết định thay đổi", body: (
+      <div className="space-y-2">
+        <Steps items={[
+          <>Vào <El>Dự án</El> → <El>Tạo dự án</El>. Có thể chọn <b>Mẫu</b> (Launch/Campaign/OEM/Xử lý tồn kho) để tự sinh milestone + task mẫu.</>,
+          <>Đặt <b>Owner</b> (chịu mục tiêu) và <b>Điều phối/PM</b> (điều phối tiến độ).</>,
+          <>Vào tab <b>Thành viên</b> thêm người + vai trò/quyền (chỉ thành viên mới xem/sửa dự án).</>,
+        ]} />
+        <Bullets items={[
+          <><b>Milestone</b>: các mốc lớn — CEO theo dõi milestone thay vì từng task nhỏ.</>,
+          <><b>Sức khỏe</b> tự động: Đúng tiến độ / Có rủi ro / Trễ — kèm <b>lý do cụ thể</b>.</>,
+          <><b>Vấn đề (Blocker)</b>: ghi điểm vướng kèm người xử lý + hạn + bước tiếp theo.</>,
+          <><b>Phụ thuộc (Dependency)</b>: việc sau chờ việc trước — hệ thống chỉ <b>cảnh báo</b>, không tự đổi hạn.</>,
+          <><b>Quyết định</b> (Decision Log) + <b>Nhật ký</b>: lưu lại để không tranh cãi về sau.</>,
+        ]} />
+        <Tip>Thay đổi <b>lớn</b> (mục tiêu, deadline tổng, đổi Owner/PM…) phải bấm <El>Đề xuất thay đổi</El> → <b>CEO duyệt</b> mới áp dụng (tự ghi vào Quyết định).</Tip>
+      </div>
+    ) },
+    { id: "approval", icon: BadgeCheck, title: "Chờ duyệt (Approval)", keywords: "duyệt phê duyệt chỉnh sửa", body: (
+      <div className="space-y-2">
+        <p className="text-[13px] text-zinc-600">Mục <El>Chờ duyệt</El> gom tất cả việc đang chờ <b>bạn</b> duyệt.</p>
+        <Steps items={[
+          <>Mở việc trong danh sách Chờ duyệt.</>,
+          <>Xem Kết quả thực tế + tiêu chí nghiệm thu.</>,
+          <>Bấm <El>Duyệt hoàn thành</El> hoặc <El>Yêu cầu chỉnh sửa</El> (ghi rõ cần sửa gì).</>,
+        ]} />
+        <Tip tone="green">Người phụ trách <b>không</b> tự duyệt việc của mình — luôn cần người duyệt khác để đảm bảo khách quan.</Tip>
+      </div>
+    ) },
+    { id: "perm", icon: Lock, title: "Quyền & vai trò", keywords: "quyền vai trò nhân viên leader ceo admin bảo mật member", body: (
+      <div className="space-y-2">
+        <Bullets items={[
+          <><b>Nhân viên</b>: tạo/làm việc của mình; cần phòng khác → gửi Yêu cầu phối hợp.</>,
+          <><b>Leader</b>: quản lý việc trong phòng mình, giao việc, duyệt.</>,
+          <><b>PM/Owner dự án</b>: quản lý dự án của mình (milestone, thành viên, blocker…).</>,
+          <><b>CEO</b>: quyết định business — duyệt thay đổi lớn của dự án, điều chỉnh deadline khẩn.</>,
+          <><b>Admin hệ thống</b>: quản trị (thành viên, phòng ban, xuất dữ liệu). <b>Không</b> tự động có quyền quyết định business của CEO.</>,
+        ]} />
+        <Tip>Việc/Yêu cầu đánh dấu <b>Mật</b> chỉ người liên quan xem được. Dự án chỉ <b>thành viên</b> mới thấy — không mở cho cả phòng.</Tip>
+      </div>
+    ) },
+    ...(["admin", "ceo"].includes(me.role) ? [{ id: "admin", icon: Settings, title: "Quản trị (dành cho Admin/CEO)", keywords: "quản trị thành viên phòng ban xuất dữ liệu nhật ký audit", body: (
+      <div className="space-y-2">
+        <Bullets items={[
+          <><b>Thành viên</b>: thêm, khóa/mở, đổi vai trò, chuyển phòng.</>,
+          <><b>Phòng ban</b>: thêm/ẩn phòng, đổi nhãn hiển thị vai trò (mô hình thay đổi được).</>,
+          <><b>Xuất dữ liệu</b>: tải công việc/yêu cầu/thành viên ra CSV/JSON cho phần mềm khác đọc.</>,
+          <><b>Nhật ký hệ thống</b>: ai làm gì, khi nào — chỉ ghi thêm, không sửa/xóa.</>,
+        ]} />
+      </div>
+    ) }] : []),
+    { id: "faq", icon: MessageSquare, title: "Hỏi đáp nhanh (FAQ)", keywords: "lỗi không gửi được không thấy dự án deadline demo", body: (
+      <div className="space-y-2.5">
+        {[
+          ["Không bấm được \"Gửi duyệt\"?", "Thiếu Tóm tắt, hoặc bạn đã dán link nhưng chưa bấm Thêm. Điền đủ Tóm tắt + link/file rồi thử lại."],
+          ["Không đổi được deadline của task?", "Task đang gắn với một Yêu cầu phối hợp đã chốt deadline. Hãy đổi trong Yêu cầu (Đề xuất đổi deadline), hoặc nhờ CEO điều chỉnh khi khẩn."],
+          ["Không thấy dự án?", "Bạn chưa phải thành viên dự án đó. Nhờ Owner/PM thêm bạn vào tab Thành viên."],
+          ["Cần phòng khác làm giúp?", "Dùng Yêu cầu phối hợp — đừng giao task trực tiếp cho người phòng khác."],
+          ["Xem thử không cần đăng nhập?", "Thêm ?demo=1 vào link để dùng dữ liệu mẫu (mọi thay đổi chỉ trong trình duyệt, reset khi tải lại)."],
+        ].map(([q2, a], i) => (
+          <div key={i} className="rounded-lg border border-zinc-100 p-2.5">
+            <p className="text-[13px] font-medium text-zinc-800">{q2}</p>
+            <p className="mt-0.5 text-[12px] text-zinc-500">{a}</p>
+          </div>
+        ))}
+      </div>
+    ) },
+  ];
+
+  const ql = q.trim().toLowerCase();
+  const shown = ql ? sections.filter((s) => (s.title + " " + s.keywords).toLowerCase().includes(ql)) : sections;
+
+  return (
+    <div>
+      <PageHeader title="Hướng dẫn sử dụng" desc={`Cách dùng NovixWork cho từng tính năng. Bạn đang đăng nhập với vai trò: ${rlabel(db, me.role)}.`} />
+      <div className="mb-3 relative max-w-md">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-300" />
+        <input className={`${inputCls} pl-9`} placeholder="Tìm trong hướng dẫn… (vd: gửi duyệt, deadline)" value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+      <div className="space-y-2">
+        {shown.map((s) => {
+          const isOpen = open.has(s.id);
+          const Ic = s.icon;
+          return (
+            <div key={s.id} className="overflow-hidden rounded-xl border border-zinc-100 bg-white">
+              <button onClick={() => toggle(s.id)} className="flex w-full items-center gap-2.5 px-4 py-3 text-left hover:bg-zinc-50">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-600"><Ic className="h-4 w-4" /></span>
+                <span className="flex-1 text-[13px] font-semibold text-zinc-800">{s.title}</span>
+                <ChevronDown className={`h-4 w-4 shrink-0 text-zinc-400 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+              </button>
+              {isOpen && <div className="border-t border-zinc-50 px-4 py-3">{s.body}</div>}
+            </div>
+          );
+        })}
+        {shown.length === 0 && <EmptyState icon={BookOpen} title="Không tìm thấy mục nào" hint="Thử từ khóa khác, hoặc xóa ô tìm để xem toàn bộ hướng dẫn." />}
+      </div>
+      <p className="mt-4 text-center text-[11px] text-zinc-400">Cần hỗ trợ thêm? Liên hệ Quản trị hệ thống hoặc Leader của bạn.</p>
+    </div>
+  );
+}
 function AdminPage() {
   const { db, me, act, toast } = useApp();
   const [tab, setTab] = useState("users");
@@ -4069,6 +4244,7 @@ function Sidebar({ page, nav, collapsed, setCollapsed }) {
     ]],
     ["Tài liệu", [
       ["documents", "Tài liệu liên kết", Link2],
+      ["help", "Hướng dẫn sử dụng", BookOpen],
     ]],
     ...(["admin", "ceo"].includes(me.role) ? [["Quản trị", [
       ["admin", "Quản trị", Settings],
@@ -4119,7 +4295,7 @@ function MobileSidebar({ page, nav }) {
   const items = [
     ["dashboard", "Trang chủ", Home], ["myTasks", "Công việc của tôi", CheckSquare], ["departments", "Phòng ban", Building2],
     ["projects", "Dự án", FolderKanban], ["requests", "Yêu cầu phối hợp", ArrowLeftRight], ["approvals", "Chờ duyệt", BadgeCheck, approveCnt],
-    ["calendar", "Lịch", CalendarDays], ["documents", "Tài liệu liên kết", Link2],
+    ["calendar", "Lịch", CalendarDays], ["documents", "Tài liệu liên kết", Link2], ["help", "Hướng dẫn sử dụng", BookOpen],
     ...(["admin", "ceo"].includes(me.role) ? [["admin", "Quản trị", Settings]] : []),
   ];
   return (
@@ -4944,6 +5120,7 @@ export default function App() {
             {page.name === "approvals" && <ApprovalsPage />}
             {page.name === "calendar" && <CalendarPage />}
             {page.name === "documents" && <DocumentsPage />}
+            {page.name === "help" && <HelpPage />}
             {page.name === "admin" && <AdminPage />}
             </ErrorBoundary>
           </main>
