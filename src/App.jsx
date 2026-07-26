@@ -222,8 +222,7 @@ const PROJECT_CHANGE_TYPES = {
   budget:     "Ngân sách tham chiếu",
 };
 const VISIBILITIES = { private: "Riêng tư", department: "Phòng ban", project: "Dự án", company: "Toàn công ty" };
-const TASK_CATEGORIES = ["GENERAL", "CONTENT", "MEDIA", "ECOMMERCE", "KOC_BOOKING", "AFFILIATE", "PRODUCT", "PURCHASING", "WAREHOUSE", "CUSTOMER_EXPERIENCE", "FINANCE_SUPPORT", "HR_ONBOARDING", "HR_PROBATION", "HR_TRAINING", "HR_DOCUMENT", "HR_POLICY", "HR_OFFBOARDING", "HR_INTERNAL_SUPPORT"];
-const HR_CATEGORY_LABELS = { HR_ONBOARDING: "Onboarding", HR_PROBATION: "Thử việc", HR_TRAINING: "Đào tạo", HR_DOCUMENT: "Hồ sơ", HR_POLICY: "Chính sách", HR_OFFBOARDING: "Offboarding", HR_INTERNAL_SUPPORT: "Yêu cầu nội bộ" };
+const TASK_CATEGORIES = ["GENERAL", "CONTENT", "MEDIA", "ECOMMERCE", "KOC_BOOKING", "AFFILIATE", "PRODUCT", "PURCHASING", "WAREHOUSE", "CUSTOMER_EXPERIENCE", "FINANCE_SUPPORT"];
 
 /* ---------- Seed: departments & users ---------- */
 const SEED_DEPTS = [
@@ -475,35 +474,6 @@ function buildSeed() {
       : { summary: "", links: [], note: "", submittedAt: null });
     if (t.status === "done" && t.approverId) t.locked = true;
   });
-  /* 2 task HR mật mẫu để test bảo mật */
-  tasks.push({
-    id: uid("t"), code: `NVX-${String(tasks.length + 1).padStart(3, "0")}`, name: "Đánh giá thử việc KOC Executive (Thảo)",
-    desc: "Leader hoàn thành phiếu đánh giá cuối kỳ theo biểu mẫu. Không trao đổi kết quả với nhân sự trước khi CEO duyệt.",
-    deliverable: "Phiếu đánh giá cuối kỳ đã điền", acceptance: "Đủ 5 nhóm tiêu chí, có nhận xét định tính, có đề xuất",
-    creatorId: "vy", assignerId: "vy", ownerId: "trang", collaboratorIds: ["vy"], approverId: "ceo",
-    deptId: "hr", coDeptIds: ["koc"], projectId: null, type: "cross", priority: "high", brandId: null,
-    start: D(-3), deadline: D(2), status: "doing", progress: 30, effort: "S", checklist: [],
-    reportLink: "", driveLink: "", attachments: [], tags: ["hr"], comments: [], category: "HR_PROBATION",
-    logs: [{ id: uid("l"), userId: "vy", at: Date.now() - DAY, text: "tạo công việc", action: "create" }],
-    pauseReason: "", overdueReason: "", revisionCount: 0, revisionNote: "", completedAt: null, confirmedById: null, approvedAt: null,
-    recurrence: null, pinnedBy: [], createdAt: Date.now() - DAY, updatedAt: Date.now() - DAY, deadlineConfirmed: true, deadlineHistory: [],
-    visibility: "private", isConfidential: true, allowedViewerIds: [], confidentialReason: "Chứa đánh giá cá nhân nhân sự",
-    locked: false, requiresAck: false, ackedAt: null, actual: { summary: "", links: [], note: "", submittedAt: null },
-  });
-  tasks.push({
-    id: uid("t"), code: `NVX-${String(tasks.length + 1).padStart(3, "0")}`, name: "Nhắc nhân sự Media bổ sung CCCD",
-    desc: "Hồ sơ còn thiếu bản sao CCCD. Nhắc bổ sung vào thư mục Drive hồ sơ cá nhân (đã phân quyền).",
-    deliverable: "Hồ sơ ghi nhận Đã nhận", acceptance: "File nằm đúng thư mục, đặt tên đúng chuẩn",
-    creatorId: "vy", assignerId: "vy", ownerId: "vy", collaboratorIds: [], approverId: null,
-    deptId: "hr", coDeptIds: [], projectId: null, type: "dept", priority: "normal", brandId: null,
-    start: D(-1), deadline: D(4), status: "todo", progress: 0, effort: "S", checklist: [],
-    reportLink: "", driveLink: "", attachments: [], tags: ["hr"], comments: [], category: "HR_DOCUMENT",
-    logs: [{ id: uid("l"), userId: "vy", at: Date.now() - DAY, text: "tạo công việc", action: "create" }],
-    pauseReason: "", overdueReason: "", revisionCount: 0, revisionNote: "", completedAt: null, confirmedById: null, approvedAt: null,
-    recurrence: null, pinnedBy: [], createdAt: Date.now() - DAY, updatedAt: Date.now() - DAY, deadlineConfirmed: true, deadlineHistory: [],
-    visibility: "department", isConfidential: true, allowedViewerIds: [], confidentialReason: "Liên quan giấy tờ cá nhân",
-    locked: false, requiresAck: false, ackedAt: null, actual: { summary: "", links: [], note: "", submittedAt: null },
-  });
   const findT = (name) => tasks.find((t) => t.name === name);
   /* Seed dependency mẫu: Content/Media/KOC phụ thuộc việc chốt thông tin sản phẩm (đang trễ → cảnh báo) */
   {
@@ -597,35 +567,8 @@ function buildSeed() {
     });
     t.recurringTemplateId = tplId; t.occurrenceDate = todayISO();
   });
-  /* Seed quy trình HR mẫu để workspace không trống */
+  /* Module HR đã gỡ (dùng HRM riêng bên ngoài) — không seed quy trình nhân sự. */
   const hrProcesses = [];
-  {
-    const mk = (over) => ({
-      id: uid("t"), code: `NVX-${String(tasks.length + 1).padStart(3, "0")}`, desc: "Thuộc quy trình Onboarding của Ngân (E-commerce – UHero).",
-      deliverable: "", acceptance: "", creatorId: "vy", assignerId: "vy", ownerId: "vy", collaboratorIds: [], approverId: null,
-      deptId: "hr", coDeptIds: ["ecom_uh"], projectId: null, type: "cross", priority: "normal", brandId: null,
-      start: D(-6), deadline: D(-2), status: "done", progress: 100, effort: "S", checklist: [],
-      reportLink: "", driveLink: "", attachments: [], tags: ["hr", "onboarding"], comments: [],
-      logs: [{ id: uid("l"), userId: "vy", at: Date.now() - 5 * DAY, text: "tạo từ quy trình Onboarding", action: "create" }],
-      pauseReason: "", overdueReason: "", revisionCount: 0, revisionNote: "", completedAt: Date.now() - 2 * DAY, confirmedById: "vy", approvedAt: null,
-      recurrence: null, pinnedBy: [], createdAt: Date.now() - 5 * DAY, updatedAt: Date.now() - DAY, deadlineConfirmed: true, deadlineHistory: [],
-      visibility: "department", isConfidential: false, allowedViewerIds: [], confidentialReason: "",
-      category: "HR_ONBOARDING", locked: false, requiresAck: false, ackedAt: null,
-      actual: { summary: "Đã hoàn tất theo checklist onboarding.", links: [], note: "", submittedAt: Date.now() - 2 * DAY },
-      ...over,
-    });
-    const ob = [
-      mk({ name: "Xác nhận ngày bắt đầu với nhân sự — Ngân" }),
-      mk({ name: "Tạo email công ty & tài khoản phần mềm — Ngân", ownerId: "admin", approverId: "vy" }),
-      mk({ name: "Bàn giao JD và mục tiêu 30 ngày — Ngân", ownerId: "duc", approverId: "vy", status: "doing", progress: 60, deadline: D(0), completedAt: null, actual: { summary: "", links: [], note: "", submittedAt: null } }),
-      mk({ name: "Nhân sự xác nhận đã đọc nội quy & tài liệu — Ngân", ownerId: "ngan", requiresAck: true, status: "todo", progress: 0, deadline: D(1), completedAt: null, actual: { summary: "", links: [], note: "", submittedAt: null } }),
-      mk({ name: "Check-in sau 7 ngày — Ngân", ownerId: "duc", status: "todo", progress: 0, deadline: D(3), completedAt: null, actual: { summary: "", links: [], note: "", submittedAt: null } }),
-    ];
-    ob.forEach((t) => tasks.push(t));
-    hrProcesses.push({ id: uid("hp"), type: "onboarding", personName: "Ngân", userId: "ngan", deptId: "ecom_uh", startDate: D(-6), taskIds: ob.map((t) => t.id), status: "active", createdAt: Date.now() - 6 * DAY, closedAt: null, closeNote: "" });
-    const probTask = tasks.find((t) => t.name === "Đánh giá thử việc KOC Executive (Thảo)");
-    if (probTask) hrProcesses.push({ id: uid("hp"), type: "probation", personName: "Thảo", userId: "thao", deptId: "koc", startDate: D(-58), taskIds: [probTask.id], status: "active", createdAt: Date.now() - 58 * DAY, closedAt: null, closeNote: "" });
-  }
   const seedAudit = [
     { ...auditEntry("minh", { action: "Thêm thành viên dự án", entity: "project_member", entityLabel: "Thảo", newValue: "Thành viên", projectId: "prj1", brandId: "nevor" }), at: Date.now() - 5 * DAY },
     { ...auditEntry("minh", { action: "Đổi trạng thái milestone", entity: "milestone", entityLabel: "M1. Chốt thông tin & giá sản phẩm", field: "status", oldValue: "IN_PROGRESS", newValue: "COMPLETED", projectId: "prj1", brandId: "nevor" }), at: Date.now() - 4 * DAY },
@@ -817,13 +760,6 @@ const APPROVER_RULES = {
   WAREHOUSE:    ["leader", "admin"],
   CUSTOMER_EXPERIENCE: ["leader", "admin"],
   FINANCE_SUPPORT:     ["leader", "admin", "ceo"],
-  HR_ONBOARDING:       ["leader", "admin"],
-  HR_PROBATION:        ["leader", "ceo"],
-  HR_TRAINING:         ["leader", "admin"],
-  HR_DOCUMENT:         ["leader", "admin"],
-  HR_POLICY:           ["leader", "ceo"],
-  HR_OFFBOARDING:      ["leader", "admin", "ceo"],
-  HR_INTERNAL_SUPPORT: ["leader", "admin"],
 };
 
 /* Hàm lấy danh sách người có thể duyệt task — không cho toàn công ty */
@@ -4134,9 +4070,8 @@ function Sidebar({ page, nav, collapsed, setCollapsed }) {
     ["Tài liệu", [
       ["documents", "Tài liệu liên kết", Link2],
     ]],
-    ...(((me.deptId === "hr" || ["admin", "ceo"].includes(me.role)) || ["admin", "ceo"].includes(me.role)) ? [["Quản trị", [
-      ...((me.deptId === "hr" || ["admin", "ceo"].includes(me.role)) ? [["hr", "Nhân sự", Users]] : []),
-      ...(["admin", "ceo"].includes(me.role) ? [["admin", "Quản trị", Settings]] : []),
+    ...(["admin", "ceo"].includes(me.role) ? [["Quản trị", [
+      ["admin", "Quản trị", Settings],
     ]]] : []),
   ];
   const on = (k) => page.name === k || (k === "departments" && page.name === "deptDetail") || (k === "projects" && page.name === "projectDetail");
@@ -4185,7 +4120,6 @@ function MobileSidebar({ page, nav }) {
     ["dashboard", "Trang chủ", Home], ["myTasks", "Công việc của tôi", CheckSquare], ["departments", "Phòng ban", Building2],
     ["projects", "Dự án", FolderKanban], ["requests", "Yêu cầu phối hợp", ArrowLeftRight], ["approvals", "Chờ duyệt", BadgeCheck, approveCnt],
     ["calendar", "Lịch", CalendarDays], ["documents", "Tài liệu liên kết", Link2],
-    ...((me.deptId === "hr" || ["admin", "ceo"].includes(me.role)) ? [["hr", "Nhân sự", Users]] : []),
     ...(["admin", "ceo"].includes(me.role) ? [["admin", "Quản trị", Settings]] : []),
   ];
   return (
@@ -4901,70 +4835,6 @@ export default function App() {
       });
       return { ok: true };
     },
-    /* ===== HR: sinh task theo template với deadline offset; quy trình mật → task mật ===== */
-    createHrProcess: (f) => {
-      if (me.deptId !== "hr" && !["admin", "ceo"].includes(me.role)) return { ok: false, msg: "Chỉ HR/Admin tạo được quy trình nhân sự" };
-      const tpl = HR_TEMPLATES[f.type];
-      if (!tpl) return { ok: false, msg: "Loại quy trình không hợp lệ" };
-      const procId = uid("hp");
-      let count = 0;
-      setDb((prev) => {
-        let next = prev;
-        const taskIds = [];
-        const base = new Date(f.startDate + "T00:00:00").getTime();
-        /* Mốc linh hoạt cho thử việc: HR nhập số ngày + ngày giữa kỳ (mặc định: 60 ngày, giữa kỳ = nửa chặng) */
-        const probationDays = Number(f.probationDays) || 60;
-        const finalBase = f.finalReviewDate ? new Date(f.finalReviewDate + "T00:00:00").getTime() : base + probationDays * DAY;
-        const midBase = f.midReviewDate ? new Date(f.midReviewDate + "T00:00:00").getTime() : base + Math.floor(probationDays / 2) * DAY;
-        const anchors = { start: base, mid: midBase, final: finalBase };
-        const leaderId = deptById(prev, f.deptId)?.leaderId || deptById(prev, f.deptId)?.defaultReceiverId;
-        tpl.items.forEach((it) => {
-          const [title, offset, ownerRole, approverRole, ack] = it;
-          const ownerId = hrResolveRole(prev, ownerRole, f);
-          const approverId = approverRole ? hrResolveRole(prev, approverRole, f) : null;
-          const id = uid("t");
-          taskIds.push(id);
-          const dl = iso(hrAnchorTime(offset, anchors));
-          const nt = {
-            id, code: nextTaskCode(next), name: `${title} — ${f.personName}`,
-            desc: `Thuộc quy trình ${tpl.label} của ${f.personName} (${deptById(prev, f.deptId)?.name}). Ngày bắt đầu quy trình: ${fmtDFull(f.startDate)}.`,
-            deliverable: title, acceptance: "", creatorId: meId, assignerId: meId, ownerId,
-            collaboratorIds: [], approverId: approverId === ownerId ? null : approverId,
-            deptId: "hr", coDeptIds: f.deptId !== "hr" ? [f.deptId] : [], projectId: null, type: "cross",
-            priority: "normal", brandId: null, start: iso(Math.min(base, Date.now())), deadline: dl,
-            status: "todo", progress: 0, effort: "S", checklist: [], reportLink: "", driveLink: "",
-            attachments: [], tags: ["hr", f.type], comments: [],
-            logs: [{ id: uid("l"), userId: meId, at: Date.now(), text: `tạo từ quy trình ${tpl.label}`, action: "create" }],
-            pauseReason: "", overdueReason: "", revisionCount: 0, revisionNote: "", completedAt: null,
-            confirmedById: null, approvedAt: null, recurrence: null, pinnedBy: [],
-            createdAt: Date.now(), updatedAt: Date.now(), deadlineConfirmed: true, deadlineHistory: [],
-            visibility: tpl.conf ? "private" : "department",
-            isConfidential: tpl.conf, allowedViewerIds: tpl.conf && leaderId ? [leaderId] : [],
-            confidentialReason: tpl.conf ? "Chứa dữ liệu cá nhân nhân sự" : "",
-            category: tpl.cat, locked: false, requiresAck: !!ack, ackedAt: null,
-            actual: { summary: "", links: [], note: "", submittedAt: null },
-          };
-          next = { ...next, tasks: [nt, ...next.tasks] };
-          if (ownerId && ownerId !== meId) next = notify(next, ownerId, "Bạn có một công việc nhân sự cần xử lý.", { taskId: id }, "act");
-          count++;
-        });
-        next = { ...next, hrProcesses: [{ id: procId, type: f.type, personName: f.personName, userId: f.userId || null, deptId: f.deptId, startDate: f.startDate, probationDays: f.type === "probation" ? probationDays : null, midReviewDate: f.type === "probation" ? iso(midBase) : null, finalReviewDate: f.type === "probation" ? iso(finalBase) : null, taskIds, status: "active", createdAt: Date.now(), closedAt: null, closeNote: "" }, ...(next.hrProcesses || [])] };
-        return next;
-      });
-      return { ok: true, id: procId, count: tpl.items.length };
-    },
-    closeHrProcess: (id, { force, reason } = {}) => {
-      const p = (db.hrProcesses || []).find((x) => x.id === id);
-      if (!p) return { ok: false, msg: "Không tìm thấy quy trình" };
-      const open = db.tasks.filter((t) => p.taskIds.includes(t.id) && !t.deleted && t.status !== "done");
-      if (open.length > 0) {
-        if (!force) return { ok: false, msg: `Còn ${open.length} task chưa hoàn thành — chưa đủ điều kiện đóng` };
-        if (!["admin", "ceo"].includes(me.role)) return { ok: false, msg: "Chỉ Admin/CEO đóng cưỡng bức được" };
-        if (!reason?.trim()) return { ok: false, msg: "Đóng cưỡng bức bắt buộc ghi lý do" };
-      }
-      setDb((prev) => ({ ...prev, hrProcesses: prev.hrProcesses.map((x) => x.id === id ? { ...x, status: "closed", closedAt: Date.now(), closeNote: force ? `Đóng cưỡng bức bởi ${me.name}: ${reason}` : "Đóng đủ điều kiện" } : x) }));
-      return { ok: true };
-    },
     addBlocker: (projectId, f) => { const p0 = projById(db, projectId); if (!(canManageProject(db, me, p0) || memberCan(p0, me.id, "canManageBlocker"))) { toast("Không có quyền ghi nhận blocker cho dự án này", "warn"); return; } setDb((prev) => { const pj = prev.projects.find((p) => p.id === projectId); return pushAudit({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, issues: [...p.issues, { id: uid("i"), title: f.title, desc: f.desc || "", severity: f.severity, ownerId: f.ownerId, deptId: f.deptId || null, dueDate: f.dueDate, nextAction: f.nextAction || "", status: "OPEN", relatedTaskId: f.relatedTaskId || null, escalation: 0, createdAt: Date.now(), resolvedAt: null, resolutionNote: "" }] } : p) }, meId, { action: "Tạo blocker", entity: "blocker", entityId: projectId, entityLabel: f.title, newValue: (f.severity || "").toUpperCase(), projectId, brandId: pj?.brandId }); }); },
     updateBlocker: (projectId, bid, patch) => { const p0 = projById(db, projectId); if (!(canManageProject(db, me, p0) || memberCan(p0, me.id, "canManageBlocker"))) { toast("Không có quyền cập nhật blocker", "warn"); return; } setDb((prev) => ({ ...prev, projects: prev.projects.map((p) => p.id === projectId ? { ...p, issues: p.issues.map((i) => i.id === bid ? { ...i, ...patch } : i) } : p) })); },
     resolveBlocker: (projectId, bid, note) => {
@@ -5066,7 +4936,6 @@ export default function App() {
             <ErrorBoundary key={page.name + (page.params?.id || "")}>
             {page.name === "dashboard" && <Dashboard />}
             {page.name === "myTasks" && <MyTasksPage />}
-            {page.name === "hr" && <HRPage />}
             {page.name === "departments" && <DepartmentsPage />}
             {page.name === "deptDetail" && <DeptDetail id={page.params.id} />}
             {page.name === "projects" && <ProjectsPage />}
@@ -5090,278 +4959,3 @@ export default function App() {
 
 /* Export nội bộ phục vụ unit test (không dùng trong UI) */
 export const __internals = { buildSeed, perms, runScheduler, runAlerts, occursToday, canManage, canCreateTaskFor, canApplyTaskPatch, assignableUsers, canViewProject, canViewRequest, canViewDoc, deptReceiverId, isReceiverFor, userById, deptById, getEligibleApprovers, isSenderAuthorized, APPROVER_RULES, TASK_FIELD_PERM, TASK_FIELD_FORBIDDEN, computeProjectHealth, milestoneProgress, weightedTaskProgress, msOverdue, msDueSoon, projBrand, computeRequestSla, escalationLevel, SLA_HOURS, projectMember, memberCan, taskDepStatus, PROJECT_ROLES, PROJECT_TEMPLATES, canManageProject, auditEntry, pushAudit, isCeo, isMgr, isProjectMemberOf, linkedAgreedRequest, taskActualReady };
-/* ============================================================
-   HR WORKSPACE — quy trình nhân sự dựa trên task
-   Phạm vi: onboarding, thử việc, đào tạo, hồ sơ, offboarding,
-   yêu cầu nội bộ, xác nhận chính sách. KHÔNG payroll/chấm công.
-   ============================================================ */
-
-/* Template: [tên task, offset ngày so với ngày bắt đầu, vai trò phụ trách, vai trò duyệt, category, mật?, requiresAck?]
-   Vai trò: hr = HR leader · leader = leader phòng của nhân sự · staff = chính nhân sự (nếu có tài khoản) · admin · ceo */
-const HR_TEMPLATES = {
-  onboarding: {
-    label: "Onboarding", cat: "HR_ONBOARDING", conf: false,
-    items: [
-      ["Xác nhận ngày bắt đầu với nhân sự", -3, "hr", null],
-      ["Chuẩn bị chỗ ngồi & thiết bị làm việc", -2, "admin", null],
-      ["Tạo email công ty & tài khoản phần mềm", -1, "admin", "hr"],
-      ["Gửi nội quy + sổ tay nhân sự", 0, "hr", null, true],
-      ["Bàn giao JD và mục tiêu 30 ngày", 0, "leader", "hr"],
-      ["Leader lập kế hoạch đào tạo tuần đầu", 1, "leader", null],
-      ["Nhân sự xác nhận đã đọc nội quy & tài liệu", 2, "staff", null, true],
-      ["Check-in sau 3 ngày", 3, "leader", null],
-      ["Check-in sau 7 ngày", 7, "leader", null],
-      ["Đánh giá cảm nhận tháng đầu", 30, "hr", "leader"],
-    ],
-  },
-  probation: {
-    label: "Thử việc", cat: "HR_PROBATION", conf: true, flexible: true,
-    /* offset là MỐC linh hoạt: {a:'start'|'mid'|'final', o:lệch ngày} — HR nhập
-       số ngày thử việc + ngày đánh giá giữa kỳ, deadline tự tính theo từng nhân sự
-       (intern 30 ngày, chính thức 60 ngày, part-time… đều dùng chung template). */
-    items: [
-      ["Xác nhận mục tiêu thử việc với nhân sự", { a: "start", o: 0 }, "leader", "hr"],
-      ["Bàn giao tiêu chí đánh giá cho nhân sự", { a: "start", o: 1 }, "leader", null],
-      ["Đánh giá giữa kỳ thử việc", { a: "mid", o: 0 }, "leader", "hr"],
-      ["Nhân sự tự đánh giá cuối kỳ", { a: "final", o: -5 }, "staff", null],
-      ["Leader đánh giá cuối kỳ", { a: "final", o: -2 }, "leader", "hr"],
-      ["HR tổng hợp hồ sơ đánh giá", { a: "final", o: 0 }, "hr", null],
-      ["Duyệt kết quả thử việc", { a: "final", o: 1 }, "ceo", null],
-      ["Thông báo kết quả cho nhân sự", { a: "final", o: 2 }, "hr", null],
-    ],
-  },
-  training: {
-    label: "Đào tạo", cat: "HR_TRAINING", conf: false,
-    items: [
-      ["Xác định nhu cầu & mục tiêu đào tạo", 0, "leader", null],
-      ["Chọn người đào tạo", 1, "leader", null],
-      ["Chuẩn bị tài liệu đào tạo", 3, "leader", "hr"],
-      ["Lên lịch & đặt phòng", 3, "hr", null],
-      ["Xác nhận người tham gia", 4, "hr", null],
-      ["Buổi đào tạo", 7, "leader", null],
-      ["Kiểm tra kết quả sau đào tạo", 10, "leader", null],
-      ["Leader xác nhận khả năng áp dụng vào công việc", 14, "leader", "hr"],
-    ],
-  },
-  offboarding: {
-    label: "Offboarding", cat: "HR_OFFBOARDING", conf: true,
-    items: [
-      ["Xác nhận ngày nghỉ chính thức", 0, "hr", null],
-      ["Lập danh sách công việc & tài liệu bàn giao", 1, "leader", null],
-      ["Chọn người nhận bàn giao", 1, "leader", null],
-      ["Bàn giao task đang mở", 3, "staff", "leader"],
-      ["Bàn giao file & tài liệu", 3, "staff", "leader"],
-      ["Thu hồi tài khoản & email", 5, "admin", "hr"],
-      ["Thu hồi tài sản, thiết bị", 5, "admin", null],
-      ["Rà soát quyền truy cập còn sót", 6, "admin", "hr"],
-      ["Leader xác nhận bàn giao hoàn tất", 6, "leader", null],
-      ["HR đóng quy trình & lưu hồ sơ", 7, "hr", null],
-    ],
-  },
-};
-
-/* Nhãn mốc của item template: số = offset ngày (D±n); object = mốc linh hoạt (BĐ/GK/CK ± n) */
-const hrOffsetLabel = (spec) => typeof spec === "number"
-  ? `D${spec >= 0 ? "+" + spec : spec}`
-  : `${({ start: "BĐ", mid: "GK", final: "CK" })[spec.a] || spec.a}${spec.o ? (spec.o > 0 ? "+" + spec.o : spec.o) : ""}`;
-/* Thời điểm (ms) của một item dựa trên các mốc thật (start/mid/final) của quy trình */
-const hrAnchorTime = (spec, anchors) => typeof spec === "number"
-  ? anchors.start + spec * DAY
-  : (anchors[spec.a] ?? anchors.start) + (spec.o || 0) * DAY;
-
-const hrResolveRole = (db, role, p) => {
-  if (role === "hr") return deptById(db, "hr")?.leaderId || "vy";
-  if (role === "leader") return deptById(db, p.deptId)?.leaderId || deptById(db, p.deptId)?.defaultReceiverId || null;
-  if (role === "staff") return p.userId || deptById(db, "hr")?.leaderId;
-  if (role === "admin") return db.users.find((u) => u.role === "admin")?.id;
-  if (role === "ceo") return db.users.find((u) => u.role === "ceo")?.id;
-  return null;
-};
-
-function HRPage() {
-  const { db, me, act, toast, openTask, openRequest } = useApp();
-  const [tab, setTab] = useState("overview");
-  const [creating, setCreating] = useState(false);
-  const [closing, setClosing] = useState(null);
-  const isHr = me.deptId === "hr" || ["admin", "ceo"].includes(me.role);
-  if (!isHr) return <EmptyState icon={Lock} title="Khu vực dành cho HR" hint="Task nhân sự của bạn (nếu có) nằm trong Công việc của tôi." />;
-
-  const procs = db.hrProcesses || [];
-  const taskOf = (p) => db.tasks.filter((t) => p.taskIds.includes(t.id) && !t.deleted);
-  const visTasks = db.tasks.filter((t) => !t.deleted && perms.view(db, me, t));
-  const hrTasks = visTasks.filter((t) => (t.category || "").startsWith("HR_"));
-  const byCat = (c) => hrTasks.filter((t) => t.category === c);
-  const overdueHr = hrTasks.filter((t) => isOverdue(t));
-  const internalReqs = db.requests.filter((r) => r.toDeptId === "hr" && !["confirmed", "rejected", "cancelled"].includes(r.status));
-  const evalDue = byCat("HR_PROBATION").filter((t) => /đánh giá/i.test(t.name) && t.status !== "done" && t.deadline && daysLeft(t.deadline) <= 7);
-
-  const ProcCard = ({ p }) => {
-    const ts = taskOf(p);
-    const done = ts.filter((t) => t.status === "done").length;
-    const openTs = ts.filter((t) => t.status !== "done");
-    const tpl = HR_TEMPLATES[p.type];
-    return (
-      <div className="rounded-xl border border-zinc-100 bg-white p-3.5">
-        <div className="flex items-center justify-between gap-2 mb-1.5">
-          <p className="text-[13px] font-semibold text-zinc-800">{p.personName} <span className="font-normal text-zinc-400">· {deptById(db, p.deptId)?.name}</span></p>
-          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${p.status === "closed" ? "bg-zinc-100 text-zinc-500" : "bg-emerald-50 text-emerald-700"}`}>{p.status === "closed" ? "Đã đóng" : "Đang chạy"}</span>
-        </div>
-        <p className="text-[11px] text-zinc-400 mb-1.5">{tpl.label} · bắt đầu {fmtDFull(p.startDate)} · {done}/{ts.length} task</p>
-        <ProgressBar v={ts.length ? Math.round((done / ts.length) * 100) : 0} cls="bg-emerald-500" />
-        <div className="mt-2 space-y-0.5 max-h-40 overflow-y-auto">
-          {ts.slice(0, 20).map((t) => (
-            <button key={t.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-zinc-50" onClick={() => openTask(t.id)}>
-              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${t.status === "done" ? "bg-emerald-500" : isOverdue(t) ? "bg-red-500" : "bg-zinc-300"}`} />
-              <span className={`flex-1 truncate text-[12px] ${t.status === "done" ? "text-zinc-400 line-through" : "text-zinc-700"}`}>{t.name}</span>
-              <span className="text-[10px] text-zinc-400">{userById(db, t.ownerId)?.name}</span>
-            </button>
-          ))}
-        </div>
-        {p.status !== "closed" && (
-          <div className="mt-2 flex items-center justify-between">
-            <p className="text-[11px] text-zinc-400">{openTs.length > 0 ? `${openTs.length} task chưa xong` : "Đủ điều kiện đóng"}</p>
-            <button className={btnGhost} onClick={() => setClosing(p)}>Đóng quy trình</button>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const tabs = [["overview", "Tổng quan"], ["onboarding", "Onboarding"], ["probation", "Thử việc"], ["training", "Đào tạo"], ["docs", "Hồ sơ"], ["offboarding", "Offboarding"], ["requests", `Yêu cầu nội bộ · ${internalReqs.length}`]];
-  const listFor = (type) => procs.filter((p) => p.type === type);
-
-  return (
-    <div>
-      <div className="mb-4 flex items-center justify-between gap-2 flex-wrap">
-        <h1 className="text-lg font-semibold text-zinc-900">Nhân sự</h1>
-        <button className={btnPri} onClick={() => setCreating(true)}><Plus className="h-4 w-4" />Tạo quy trình</button>
-      </div>
-      <div className="mb-4 flex gap-1 border-b border-zinc-100 overflow-x-auto">
-        {tabs.map(([k, lb]) => <button key={k} onClick={() => setTab(k)} className={`whitespace-nowrap px-3 py-2 text-[13px] font-medium border-b-2 -mb-px ${tab === k ? "border-zinc-900 text-zinc-900" : "border-transparent text-zinc-400"}`}>{lb}</button>)}
-      </div>
-
-      {tab === "overview" && (
-        <div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-4">
-            {[["Đang onboarding", listFor("onboarding").filter((p) => p.status !== "closed").length, "onboarding"],
-              ["Đang thử việc", listFor("probation").filter((p) => p.status !== "closed").length, "probation"],
-              ["Task HR quá hạn", overdueHr.length, null],
-              ["Đánh giá đến hạn 7 ngày", evalDue.length, "probation"]].map(([lb, n, to]) => (
-              <button key={lb} className="rounded-xl border border-zinc-100 bg-white p-3.5 text-left hover:shadow-sm" onClick={() => to && setTab(to)}>
-                <p className={`text-2xl font-bold ${lb.includes("quá hạn") && n > 0 ? "text-red-600" : "text-zinc-900"}`}>{n}</p>
-                <p className="text-[11px] text-zinc-400 mt-0.5">{lb}</p>
-              </button>
-            ))}
-          </div>
-          {overdueHr.length > 0 && (
-            <div className="mb-4 rounded-xl border border-red-100 bg-red-50/50 p-3">
-              <p className="mb-1.5 text-xs font-semibold text-red-700">Task nhân sự quá hạn — xử lý ngay</p>
-              {overdueHr.map((t) => <button key={t.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-white" onClick={() => openTask(t.id)}><span className="flex-1 truncate text-[12px] text-zinc-700">{t.name}</span><span className="text-[11px] text-red-600">{deadlineMeta(t).label}</span><span className="text-[10px] text-zinc-400">{userById(db, t.ownerId)?.name}</span></button>)}
-            </div>
-          )}
-          <div className="rounded-xl border border-zinc-100 bg-white p-3.5">
-            <p className="mb-1.5 text-xs font-semibold text-zinc-600">Task HR bảo mật đang mở</p>
-            {hrTasks.filter((t) => t.isConfidential && t.status !== "done").map((t) => (
-              <button key={t.id} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-zinc-50" onClick={() => openTask(t.id)}>
-                <Lock className="h-3 w-3 text-zinc-400 shrink-0" /><span className="flex-1 truncate text-[12px] text-zinc-700">{t.name}</span><StatusPill s={t.status} />
-              </button>
-            ))}
-            {hrTasks.filter((t) => t.isConfidential && t.status !== "done").length === 0 && <p className="text-xs text-zinc-300">Không có</p>}
-            <p className="mt-2 text-[10px] text-zinc-400">Chỉ hiển thị trong khu vực HR theo quyền — không xuất hiện ở tìm kiếm, thông báo hay dashboard chung.</p>
-          </div>
-        </div>
-      )}
-
-      {["onboarding", "probation", "training", "offboarding"].includes(tab) && (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {listFor(tab).length === 0 && <EmptyState icon={Users} title={`Chưa có quy trình ${HR_TEMPLATES[tab].label}`} hint="Bấm Tạo quy trình — task sẽ tự sinh theo template với deadline offset." />}
-          {listFor(tab).map((p) => <ProcCard key={p.id} p={p} />)}
-        </div>
-      )}
-
-      {tab === "docs" && (
-        <div className="rounded-xl border border-zinc-100 bg-white divide-y divide-zinc-50">
-          {byCat("HR_DOCUMENT").length === 0 && <p className="p-4 text-xs text-zinc-300">Không có hồ sơ cần bổ sung</p>}
-          {byCat("HR_DOCUMENT").map((t) => (
-            <button key={t.id} className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-zinc-50" onClick={() => openTask(t.id)}>
-              <span className="flex-1 text-[13px] text-zinc-700">{t.name}</span><StatusPill s={t.status} /><DeadlineBadge t={t} />
-            </button>
-          ))}
-        </div>
-      )}
-
-      {tab === "requests" && (
-        <div className="rounded-xl border border-zinc-100 bg-white divide-y divide-zinc-50">
-          {internalReqs.length === 0 && <p className="p-4 text-xs text-zinc-300">Không có yêu cầu nội bộ đang mở</p>}
-          {internalReqs.map((r) => (
-            <button key={r.id} className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-zinc-50" onClick={() => openRequest(r.id)}>
-              <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500">{r.reqType || "Khác"}</span>
-              <span className="flex-1 truncate text-[13px] text-zinc-700">{r.title}</span>
-              <span className="text-[11px] text-zinc-400">{userById(db, r.fromUserId)?.name}</span>
-              <ReqPill s={r.status} />
-            </button>
-          ))}
-        </div>
-      )}
-
-      {creating && <HrProcessForm onClose={() => setCreating(false)} />}
-      {closing && (
-        <Modal title="Đóng quy trình" onClose={() => setClosing(null)}>
-          {(() => {
-            const openTs = taskOf(closing).filter((t) => t.status !== "done");
-            const canForce = ["admin", "ceo"].includes(me.role);
-            return openTs.length === 0 ? (
-              <>
-                <p className="text-[13px] text-zinc-600">Tất cả task đã hoàn thành. Đóng quy trình <b>{closing.personName}</b>?</p>
-                <div className="mt-3 flex justify-end gap-2"><button className={btnSec} onClick={() => setClosing(null)}>Hủy</button><button className={btnPri} onClick={() => { act.closeHrProcess(closing.id, {}); setClosing(null); toast("Đã đóng quy trình"); }}>Đóng quy trình</button></div>
-              </>
-            ) : (
-              <>
-                <p className="text-[13px] text-zinc-600 mb-2">Còn <b>{openTs.length} task chưa hoàn thành</b> — quy trình chỉ đóng khi đủ điều kiện:</p>
-                <div className="mb-2 max-h-40 overflow-y-auto rounded-lg bg-zinc-50 p-2">{openTs.map((t) => <p key={t.id} className="text-[12px] text-zinc-600 py-0.5">• {t.name} ({userById(db, t.ownerId)?.name})</p>)}</div>
-                {canForce ? (
-                  <>
-                    <Field label="Admin đóng cưỡng bức — lý do (ghi log)" req><textarea className={inputCls} rows={2} value={closing.reason || ""} onChange={(e) => setClosing({ ...closing, reason: e.target.value })} /></Field>
-                    <div className="flex justify-end gap-2"><button className={btnSec} onClick={() => setClosing(null)}>Hủy</button><button className={btnPri} disabled={!closing.reason?.trim()} onClick={() => { const r = act.closeHrProcess(closing.id, { force: true, reason: closing.reason }); toast(r.ok ? "Đã đóng (cưỡng bức)" : r.msg, r.ok ? "ok" : "err"); setClosing(null); }}>Đóng cưỡng bức</button></div>
-                  </>
-                ) : <div className="flex justify-end"><button className={btnSec} onClick={() => setClosing(null)}>Đóng</button></div>}
-              </>
-            );
-          })()}
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-function HrProcessForm({ onClose }) {
-  const { db, act, toast } = useApp();
-  const [f, setF] = useState({ type: "onboarding", personName: "", userId: "", deptId: "content", startDate: todayISO(), probationDays: 60, midReviewDate: "" });
-  const tpl = HR_TEMPLATES[f.type];
-  /* Với thử việc: tính mốc thật để preview đúng ngày cho từng nhân sự */
-  const base = f.startDate ? new Date(f.startDate + "T00:00:00").getTime() : Date.now();
-  const days = Number(f.probationDays) || 60;
-  const anchors = {
-    start: base,
-    final: f.startDate ? base + days * DAY : base,
-    mid: f.midReviewDate ? new Date(f.midReviewDate + "T00:00:00").getTime() : base + Math.floor(days / 2) * DAY,
-  };
-  return (
-    <Modal title="Tạo quy trình nhân sự" onClose={onClose} wide>
-      <div className="grid grid-cols-2 gap-x-3">
-        <Field label="Loại quy trình" req><select className={inputCls} value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>{Object.entries(HR_TEMPLATES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></Field>
-        <Field label="Phòng ban" req><select className={inputCls} value={f.deptId} onChange={(e) => setF({ ...f, deptId: e.target.value })}>{activeDepts(db).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
-        <Field label="Tên nhân sự" req><input className={inputCls} value={f.personName} onChange={(e) => setF({ ...f, personName: e.target.value })} placeholder="VD: Nguyễn Văn A" /></Field>
-        <Field label="Tài khoản (nếu đã có)"><UserSelect value={f.userId || null} onChange={(v) => setF({ ...f, userId: v || "" })} placeholder="— Chưa có tài khoản —" /></Field>
-        <Field label="Ngày bắt đầu" req><input type="date" className={inputCls} value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} /></Field>
-        {f.type === "probation" && <Field label="Số ngày thử việc" req><select className={inputCls} value={f.probationDays} onChange={(e) => setF({ ...f, probationDays: e.target.value })}>{[30, 45, 60, 90].map((d) => <option key={d} value={d}>{d} ngày</option>)}</select></Field>}
-        {f.type === "probation" && <Field label="Ngày đánh giá giữa kỳ"><input type="date" className={inputCls} value={f.midReviewDate || ""} onChange={(e) => setF({ ...f, midReviewDate: e.target.value })} /><p className="mt-1 text-[10px] text-zinc-400">Để trống = tự tính giữa chặng. Kết thúc: {fmtDFull(iso(anchors.final))}</p></Field>}
-      </div>
-      <div className="rounded-lg bg-zinc-50 p-3 mb-3">
-        <p className="mb-1 text-[11px] font-medium uppercase text-zinc-400">Sẽ tạo {tpl.items.length} task theo lịch{tpl.conf ? " · toàn bộ ở chế độ BẢO MẬT" : ""}</p>
-        <div className="max-h-36 overflow-y-auto">{tpl.items.map((it, i) => <p key={i} className="text-[12px] text-zinc-500 py-0.5">{f.startDate ? fmtDFull(iso(hrAnchorTime(it[1], anchors))) : hrOffsetLabel(it[1])} · {it[0]}</p>)}</div>
-      </div>
-      <div className="flex justify-end gap-2"><button className={btnSec} onClick={onClose}>Hủy</button><button className={btnPri} disabled={!f.personName.trim() || !f.deptId || !f.startDate} onClick={() => { const r = act.createHrProcess(f); toast(r.ok ? `Đã tạo quy trình · ${r.count} task` : r.msg, r.ok ? "ok" : "err"); onClose(); }}>Tạo quy trình</button></div>
-    </Modal>
-  );
-}
