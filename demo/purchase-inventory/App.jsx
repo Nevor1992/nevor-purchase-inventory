@@ -79,9 +79,7 @@ const PERMISSIONS={
  Warehouse:["po.goodsReceipt","inventory.transfer","pos.import"],
  QC:["po.qc"],
  Accounting:["po.confirmDeposit","po.confirmFinal","po.actualCost","budget.edit","config.edit"],
- "Sales Planner":["salesPlan.edit"],
- "E-commerce Lead":["salesPlan.edit"],
- "Growth Lead":["salesPlan.edit","campaign.approve"],
+ "Sales Planner":["salesPlan.edit","campaign.approve"],
  Viewer:[],
 };
 const ROLES=Object.keys(PERMISSIONS);
@@ -1237,11 +1235,9 @@ export default function App(){
     QC:["help","inv","po"],
     Accounting:["help","cash","cpmh","po","claims","audit"],
     "Sales Planner":["help","plan","var","trend","inv"],
-    "E-commerce Lead":["help","plan","var","trend","inv"],
-    "Growth Lead":["help","plan","var","trend","inv","ceo"],
     Viewer:["help","ceo","cap","wb","cal","var","trend","plan","po","supplier","pack","cash","data","inv","claims"],
   };
-  const DEFAULT_TAB={CEO:"ceo",Leader:"leader",Purchasing:"wb",Warehouse:"inv",QC:"po",Accounting:"cash","Sales Planner":"plan","E-commerce Lead":"plan","Growth Lead":"plan",Viewer:"ceo"};
+  const DEFAULT_TAB={CEO:"ceo",Leader:"leader",Purchasing:"wb",Warehouse:"inv",QC:"po",Accounting:"cash","Sales Planner":"plan",Viewer:"ceo"};
   const visibleTabs=TABS.filter(t=>(TAB_ACCESS[role]||[]).includes(t.id));
   const navS=id=>({display:"flex",alignItems:"center",gap:7,padding:"6px 10px",borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:tab===id?700:500,background:tab===id?"#EFF6FF":"transparent",color:tab===id?"#1D4ED8":"#4B5563",border:"none",width:"100%",textAlign:"left"});
 
@@ -1677,7 +1673,7 @@ export default function App(){
         </tbody></table>
         <div style={{padding:"8px 14px",fontSize:10,color:"#6B7280",borderTop:"1px solid #F3F4F6"}}>COMMITTED = Base + campaign chắc chắn (Purchasing mặc định dùng) · STRETCH = Committed + tăng trưởng chưa chắc (chỉ CEO chọn mua theo).</div>
       </Panel>
-      <Note tone="warn"><span>Chỉ <strong>CEO, Leader, Sales Planner, E-commerce Lead, Growth Lead</strong> được sửa plan. Purchasing / Kế toán / Viewer chỉ xem. Lệch &gt;30% so với plan → tô đỏ, phải ghi lý do khi lập plan version mới.</span></Note>
+      <Note tone="warn"><span>Chỉ <strong>CEO, Leader, Sales Planner</strong> được sửa plan. Purchasing / Kế toán / Viewer chỉ xem. Lệch &gt;30% so với plan → tô đỏ, phải ghi lý do khi lập plan version mới.</span></Note>
     </div>);
   };
 
@@ -2570,7 +2566,7 @@ export default function App(){
               ["Warehouse","Nhận hàng, chuyển kho, đối soát tồn, ghi đền bù."],
               ["QC","Kiểm chất lượng cho PO."],
               ["Accounting","Xác nhận cọc/nốt, ngân sách, chi phí thực, chi phí mua hàng."],
-              ["Sales Planner / E-com / Growth","Lập & duyệt kế hoạch bán, phân tích biến thể & mùa vụ."],
+              ["Sales Planner","Lập & duyệt kế hoạch bán, duyệt campaign, phân tích biến thể & mùa vụ."],
               ["Viewer","Chỉ xem — không thao tác."]].map(([r,d])=>(<tr key={r}><TD b c="#1D4ED8">{r}</TD><TD><span style={{fontSize:11}}>{d}</span></TD></tr>))}
           </tbody></table></div>
       </Panel>
