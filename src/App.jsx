@@ -332,6 +332,8 @@ function buildTasks() {
   // Affiliate
   t.push(T(n++, { name: "Phân loại Scale/Test/Stop 286 creator tháng này", desc: "Áp dụng khung phân loại theo GMV, refund rate và tần suất post.", deliverable: "File phân loại + danh sách creator Scale", creatorId: "minh", assignerId: "minh", ownerId: "huy", approverId: "minh", deptId: "aff", type: "dept", priority: "high", deadline: D(6), status: "doing", progress: 45, effort: "L", tags: ["affiliate"] }));
   t.push(T(n++, { name: "Gửi hàng mẫu cho 15 KOC đợt mới", desc: "Đóng gói + gửi mẫu theo danh sách Booking KOC đã chốt.", deliverable: "15 đơn gửi mẫu có mã vận đơn", creatorId: "trang", assignerId: "trang", ownerId: "hoa", approverId: null, deptId: "wh", coDeptIds: ["koc"], type: "cross", priority: "normal", deadline: D(1), status: "doing", progress: 50, effort: "S", tags: ["koc"] }));
+  // Task Thu mua xử lý lỗi lô hàng — GẮN với Yêu cầu REQ-004 (demo khóa deadline chéo phòng, P0.1)
+  t.push(T(n++, { name: "Làm việc NCC xử lý lỗi lô đai gối GT-102", desc: "Đàm phán NCC phương án đổi trả cho lô đai gối GT-102 bị bung chỉ (theo Yêu cầu REQ-004 từ CX).", deliverable: "Phương án + số lượng đổi trả + thời hạn NCC xác nhận", creatorId: "nhung", assignerId: null, ownerId: "son", collaboratorIds: [], approverId: null, deptId: "proc", coDeptIds: ["cx"], type: "cross", priority: "urgent", deadline: D(2), status: "doing", progress: 30, effort: "M", deadlineConfirmed: true, tags: ["cx", "thu-mua"] }));
   // Recurring examples
   t.push(T(n++, { name: "Cập nhật báo cáo Booking tuần", desc: "Cập nhật file báo cáo booking KOC tuần: số deal, chi phí, GMV ước tính.", deliverable: "File báo cáo tuần cập nhật xong", creatorId: "trang", assignerId: "trang", ownerId: "thao", approverId: "trang", deptId: "koc", type: "recurring", recurrence: "weekly", priority: "normal", deadline: D(2), status: "todo", effort: "S", reportLink: "https://docs.google.com/novix/bao-cao-booking", tags: ["bao-cao"] }));
   t.push(T(n++, { name: "Cập nhật báo cáo doanh số ngày các shop", desc: "Nhập số liệu doanh số ngày từ Shopee + TikTok Shop vào file báo cáo.", deliverable: "File báo cáo ngày đầy đủ số liệu", creatorId: "ha", assignerId: "ha", ownerId: "phuc", approverId: null, deptId: "ecom", type: "recurring", recurrence: "daily", priority: "normal", deadline: D(0), status: "doing", progress: 50, effort: "S", reportLink: "https://docs.google.com/novix/doanh-so-ngay", tags: ["bao-cao"] }));
@@ -567,6 +569,9 @@ function buildSeed() {
       r4.deadlineChange = null;
       r4.ceoOverride = { by: "ceo", at: Date.now() - 6 * HOUR, reason: "Lô ảnh hưởng rating shop, cần xử lý gấp trong 2 ngày", urgency: "urgent", impact: "Rút thời gian làm việc NCC; ưu tiên nguồn lực Thu mua", oldDeadline: oldDl };
       r4.logs = [...(r4.logs || []), { id: uid("l"), userId: "ceo", at: Date.now() - 6 * HOUR, text: `CEO điều chỉnh deadline trực tiếp: ${fmtDFull(oldDl)} → ${fmtDFull(r4.agreedDeadline)} — Lô ảnh hưởng rating shop` }];
+      /* Gắn task Thu mua vào Yêu cầu → deadline task bị khóa (đổi phải qua Yêu cầu / CEO) — demo P0.1 */
+      const lt = findT("Làm việc NCC xử lý lỗi lô đai gối GT-102");
+      if (lt) { r4.taskId = lt.id; lt.deadline = r4.agreedDeadline; lt.deadlineConfirmed = true; }
     }
   }
   /* (b) Đề xuất ĐỔI deadline 2 chiều còn CHỜ DUYỆT trên Yêu cầu gửi mẫu (REQ-002) */
@@ -2548,7 +2553,7 @@ function ProjectsPage() {
   const [creating, setCreating] = useState(false);
   const [bTab, setBTab] = useState("all");
   const canCreate = ["admin", "ceo", "leader"].includes(me.role);
-  const list = db.projects.filter((p) => !p.deleted && (bTab === "all" || projBrand(p) === bTab));
+  const list = db.projects.filter((p) => canViewProject(db, me, p) && (bTab === "all" || projBrand(p) === bTab));
   return (
     <div>
       <PageHeader title="Dự án" desc="Mục tiêu liên phòng ban — tiến độ theo trọng số công việc + sức khỏe tự động." actions={canCreate && <button className={btnPri} onClick={() => setCreating(true)}><Plus className="h-4 w-4" />Tạo dự án</button>} />
