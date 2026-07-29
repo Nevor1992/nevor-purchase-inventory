@@ -406,7 +406,7 @@ function buildRequests(tasks) {
     R(1, { title: "Cung cấp thông tin sản phẩm đai lưng mới", content: "Content cần đủ thông số, chất liệu, size chart và USP để viết trang sản phẩm + brief KOC.", fromDeptId: "content", fromUserId: "linh", toDeptId: "rnd", receiverId: "lan", handlerId: "lan", priority: "urgent", proposedDeadline: D(0), agreedDeadline: D(0), deliverable: "File thông tin sản phẩm chuẩn hoá", status: "processing", logs: [{ id: uid("l"), userId: "lan", at: Date.now() - 2 * DAY, text: "tiếp nhận yêu cầu" }] }),
     R(2, { title: "Gửi hàng mẫu đai lưng cho studio", content: "Booking cần 5 mẫu đủ size gửi tới studio trước lịch quay thứ 5.", fromDeptId: "koc", fromUserId: "trang", toDeptId: "wh", receiverId: "hoa", handlerId: "hoa", priority: "high", proposedDeadline: D(1), agreedDeadline: D(1), deliverable: "5 mẫu + biên bản bàn giao", status: "accepted", logs: [{ id: uid("l"), userId: "hoa", at: Date.now() - DAY, text: "tiếp nhận yêu cầu" }] }),
     R(3, { title: "Bàn giao mẫu quay cho Media", content: "Media cần mẫu quay bình giữ nhiệt màu mới trong tuần này.", fromDeptId: "media", fromUserId: "dat", toDeptId: "rnd", priority: "normal", proposedDeadline: D(4), deliverable: "2 mẫu màu mới", status: "pending" }),
-    R(4, { title: "Xử lý lỗi sản phẩm lô găng tập GT-102", content: "CX nhận 9 khiếu nại bung chỉ cùng lô. Đề nghị Thu mua làm việc với NCC về phương án đổi trả.", fromDeptId: "cx", fromUserId: "nhung", toDeptId: "proc", receiverId: "son", handlerId: "son", priority: "high", proposedDeadline: D(3), agreedDeadline: D(4), deliverable: "Phương án xử lý từ NCC + số lượng đổi trả", status: "processing", logs: [{ id: uid("l"), userId: "son", at: Date.now() - DAY, text: "tiếp nhận, đề xuất lùi hạn 1 ngày (đã thống nhất)" }] }),
+    R(4, { title: "Xử lý lỗi bung chỉ lô đai gối GT-102", content: "CX nhận 9 khiếu nại bung chỉ cùng lô đai gối GT-102. Đề nghị Thu mua làm việc với NCC về phương án đổi trả trong hạn.", fromDeptId: "cx", fromUserId: "nhung", toDeptId: "proc", receiverId: "son", handlerId: "son", priority: "urgent", proposedDeadline: D(3), agreedDeadline: D(4), deliverable: "Phương án xử lý từ NCC + số lượng đổi trả + thời hạn NCC", status: "processing", logs: [{ id: uid("l"), userId: "son", at: Date.now() - DAY, text: "tiếp nhận, đề xuất lùi hạn 1 ngày (đã thống nhất)" }] }),
     R(5, { title: "Thiết kế banner deal hội viên", content: "E-commerce cần banner deal hội viên cho trang shop, size theo template Shopee.", fromDeptId: "ecom", fromUserId: "ha", toDeptId: "media", receiverId: "dat", handlerId: "tung", priority: "normal", proposedDeadline: D(2), agreedDeadline: D(2), deliverable: "Banner PNG + file gốc", status: "delivered", logs: [{ id: uid("l"), userId: "tung", at: Date.now() - 6 * 3600000, text: "bàn giao kết quả" }] }),
     R(6, { title: "Bổ sung chứng từ booking tháng trước", content: "Kế toán cần 8 chứng từ thanh toán KOC còn thiếu để chốt sổ.", fromDeptId: "acct", fromUserId: "yen", toDeptId: "koc", receiverId: "trang", handlerId: "thao", priority: "high", proposedDeadline: D(1), agreedDeadline: D(1), deliverable: "8 chứng từ scan đầy đủ", status: "accepted" }),
     R(7, { title: "Cung cấp số liệu tồn kho cho kế hoạch 9.9", content: "E-commerce cần số tồn hiện tại của 40 SKU chủ lực để lên kế hoạch deal.", fromDeptId: "ecom", fromUserId: "phuc", toDeptId: "wh", priority: "normal", proposedDeadline: D(6), deliverable: "File tồn kho 40 SKU", status: "pending" }),
@@ -554,6 +554,47 @@ function buildSeed() {
     ];
     prj7.decisions = [];
   }
+  /* ===== Dữ liệu demo cho tính năng phối hợp Phase 1–4 (để bấm thử trực tiếp) ===== */
+  /* (a) CEO override deadline trên Yêu cầu CX → Thu mua (REQ-004, lô đai gối GT-102) */
+  {
+    const r4 = requests.find((r) => r.code === "REQ-004");
+    if (r4) {
+      const oldDl = r4.agreedDeadline; // D(4) — hạn 2 bên đã chốt
+      r4.agreedDeadline = D(2);        // CEO rút còn 2 ngày
+      r4.createdAt = Date.now() - 2 * DAY;
+      r4.receivedAt = r4.receivedAt || (r4.createdAt + 8 * HOUR);
+      r4.acceptanceCriteria = r4.acceptanceCriteria || "NCC xác nhận phương án + số lượng đổi trả, xử lý trong 2 ngày";
+      r4.deadlineChange = null;
+      r4.ceoOverride = { by: "ceo", at: Date.now() - 6 * HOUR, reason: "Lô ảnh hưởng rating shop, cần xử lý gấp trong 2 ngày", urgency: "urgent", impact: "Rút thời gian làm việc NCC; ưu tiên nguồn lực Thu mua", oldDeadline: oldDl };
+      r4.logs = [...(r4.logs || []), { id: uid("l"), userId: "ceo", at: Date.now() - 6 * HOUR, text: `CEO điều chỉnh deadline trực tiếp: ${fmtDFull(oldDl)} → ${fmtDFull(r4.agreedDeadline)} — Lô ảnh hưởng rating shop` }];
+    }
+  }
+  /* (b) Đề xuất ĐỔI deadline 2 chiều còn CHỜ DUYỆT trên Yêu cầu gửi mẫu (REQ-002) */
+  {
+    const r2 = requests.find((r) => r.code === "REQ-002");
+    if (r2) {
+      r2.deadlineChange = { proposedDeadline: D(3), by: "hoa", side: "receiver", reason: "Kho đang dồn đơn campaign, xin lùi 2 ngày để đóng gói đúng chuẩn", impact: "Lịch quay KOC lùi tương ứng 2 ngày", at: Date.now() - 4 * HOUR, status: "pending" };
+      r2.logs = [...(r2.logs || []), { id: uid("l"), userId: "hoa", at: Date.now() - 4 * HOUR, text: `đề xuất ĐỔI deadline: ${fmtDFull(r2.agreedDeadline)} → ${fmtDFull(D(3))} — Kho đang dồn đơn campaign` }];
+    }
+  }
+  /* (c) Project Change Request CHỜ CEO DUYỆT + quyết định go/no-go trên dự án Launch đai lưng (prj1) */
+  if (prj1) {
+    prj1.changeRequests = [{
+      id: uid("pcr"), changeType: "deadline",
+      currentValue: prj1.deadline, proposedValue: D(25),
+      reason: "Hàng mẫu NCC về trễ 5 ngày → Content/Media chưa có mẫu quay. Dời launch 7 ngày để đảm bảo chất lượng bộ content.",
+      impact: "Mốc M4 Launch lùi 7 ngày; ngân sách ads giữ nguyên; KOC seeding dời theo.",
+      requestedByUserId: "minh", approverId: "ceo",
+      status: "pending", createdAt: Date.now() - DAY, resolvedAt: null,
+    }];
+    prj1.decisions = [
+      { id: uid("dec"), title: "Duyệt go/no-go SKU đai lưng V2", decision: "GO — sản xuất thử 300 chiếc/màu.", decidedById: "ceo", decidedAt: Date.now() - 10 * DAY, reason: "Margin dự kiến đạt, MOQ khả thi, angle bán rõ", impact: "Khởi động launch V2", supersedesId: null, relatedTaskIds: [] },
+      ...prj1.decisions,
+    ];
+  }
+  /* Thông báo để CEO thấy ngay ở Trung tâm hành động */
+  N("ceo", "request", "urgent", "Minh đề xuất đổi deadline dự án Launch đai lưng V2 — chờ CEO duyệt", { projectId: "prj1" });
+  N("ceo", "request", "urgent", "CX gửi yêu cầu KHẨN: Xử lý lỗi bung chỉ lô đai gối GT-102", { requestId: requests.find((r) => r.code === "REQ-004")?.id });
   /* Recurring: chuyển task recurrence → template + instance hôm nay; scheduler sẽ sinh kỳ mới */
   const recurrings = [];
   tasks.forEach((t) => {
@@ -573,6 +614,9 @@ function buildSeed() {
     { ...auditEntry("minh", { action: "Thêm thành viên dự án", entity: "project_member", entityLabel: "Thảo", newValue: "Thành viên", projectId: "prj1", brandId: "nevor" }), at: Date.now() - 5 * DAY },
     { ...auditEntry("minh", { action: "Đổi trạng thái milestone", entity: "milestone", entityLabel: "M1. Chốt thông tin & giá sản phẩm", field: "status", oldValue: "IN_PROGRESS", newValue: "COMPLETED", projectId: "prj1", brandId: "nevor" }), at: Date.now() - 4 * DAY },
     { ...auditEntry("minh", { action: "Ghi quyết định", entity: "decision", entityLabel: "Chốt nhà cung cấp đai lưng", reason: "Sample A đạt & giá tốt", projectId: "prj1", brandId: "nevor" }), at: Date.now() - 3 * DAY },
+    { ...auditEntry("ceo", { action: "Duyệt go/no-go SKU đai lưng V2", entity: "decision", entityLabel: "GO — sản xuất thử 300 chiếc/màu", reason: "Margin đạt, MOQ khả thi", projectId: "prj1", brandId: "nevor" }), at: Date.now() - 10 * DAY },
+    { ...auditEntry("minh", { action: "Đề xuất thay đổi dự án", entity: "change_request", entityLabel: "Deadline tổng", field: "deadline", oldValue: prj1?.deadline, newValue: D(25), reason: "Mẫu về trễ, dời launch 7 ngày", projectId: "prj1", brandId: "nevor" }), at: Date.now() - DAY },
+    { ...auditEntry("ceo", { action: "CEO điều chỉnh deadline trực tiếp", entity: "request", entityLabel: "Xử lý lỗi bung chỉ lô đai gối GT-102", reason: "Lô ảnh hưởng rating shop" }), at: Date.now() - 6 * HOUR },
   ];
   return {
     schema: 2, users: SEED_USERS, depts: SEED_DEPTS, projects: SEED_PROJECTS,
