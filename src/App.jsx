@@ -3616,6 +3616,32 @@ function HelpPage() {
         ]} />
       </div>
     ) },
+    { id: "fields", icon: FileText, title: "Ý nghĩa các trường — vì sao phải điền", keywords: "trường field ý nghĩa tên phòng ban người phụ trách owner người duyệt deadline ưu tiên kết quả kỳ vọng thực tế hiển thị mật dự án phối hợp checklist tiêu chí nghiệm thu", body: (
+      <div className="space-y-2">
+        <p className="text-[13px] text-zinc-600">Điền đúng ngay từ đầu = ít họp, ít hỏi lại, ít làm lại. Mỗi trường có một mục đích rõ:</p>
+        <Bullets items={[
+          <><b>Tên công việc</b> — nói rõ "làm gì, ra cái gì" trong 1 dòng. <i>Vì sao:</i> để người khác (và bạn sau này) hiểu ngay và tìm lại được. VD: "Viết 5 post + 3 script combo Vu Lan" thay vì "Content Vu Lan".</>,
+          <><b>Phòng ban phụ trách</b> — phòng chịu trách nhiệm chính. <i>Vì sao:</i> xác định ai quản, tính đúng quyền và thương hiệu (Nevor / UHero / Chung).</>,
+          <><b>Người phụ trách (Owner)</b> — <b>một</b> người chịu kết quả. <i>Vì sao:</i> tránh "cha chung không ai khóc" — luôn có một đầu mối chịu trách nhiệm.</>,
+          <><b>Người duyệt</b> — ai nghiệm thu khi xong. <i>Vì sao:</i> đảm bảo khách quan; người làm không tự duyệt việc của mình. Việc lớn (ngân sách, giá, launch) đặt người duyệt = CEO.</>,
+          <><b>Deadline</b> — hạn cam kết. <i>Vì sao:</i> hệ thống nhắc, tô đỏ khi quá hạn và báo lên leader/CEO dựa vào mốc này.</>,
+          <><b>Ưu tiên</b> (Thường / Cao / Khẩn) — mức quan trọng. <i>Vì sao:</i> quyết định thứ tự làm; việc Khẩn quá hạn sẽ nổi lên trung tâm hành động của CEO.</>,
+          <><b>Kết quả kỳ vọng</b> — mô tả "thế nào là xong" TRƯỚC khi làm. <i>Vì sao:</i> chốt tiêu chí nghiệm thu ngay từ đầu → tránh làm lại vì hiểu sai ý.</>,
+          <><b>Kết quả thực tế</b> (tóm tắt + link/file) — bằng chứng đã làm. <i>Vì sao:</i> để người duyệt nghiệm thu; <b>thiếu thì không Gửi duyệt được</b>.</>,
+          <><b>Hiển thị / Mật</b> — ai được xem (Riêng tư / Phòng ban / Dự án / Toàn công ty). <i>Vì sao:</i> việc nhạy cảm (khiếu nại CX, tài chính) để <b>Mật</b> — chỉ người liên quan thấy.</>,
+          <><b>Dự án</b> — gắn task vào mục tiêu lớn. <i>Vì sao:</i> để tiến độ task được tính vào sức khỏe & milestone của dự án.</>,
+          <><b>Phối hợp</b> (phòng/người cùng làm) — người hỗ trợ, không chịu chính. <i>Vì sao:</i> họ thấy & tham gia việc, nhưng trách nhiệm vẫn thuộc Owner.</>,
+          <><b>Checklist</b> — chia nhỏ các bước. <i>Vì sao:</i> dễ theo dõi tiến độ và giao từng mục cho người phối hợp.</>,
+        ]} />
+        <p className="mt-2 text-[13px] font-medium text-zinc-700">Trong Yêu cầu phối hợp có thêm</p>
+        <Bullets items={[
+          <><b>Kết quả cần bàn giao</b> — sản phẩm cụ thể bên nhận phải giao. <i>Vì sao:</i> để nghiệm thu không tranh cãi.</>,
+          <><b>Deadline mong muốn → Deadline thống nhất</b> — hai bên chốt. <i>Vì sao:</i> cam kết 2 chiều, không áp đặt một phía.</>,
+          <><b>Tiêu chí nghiệm thu</b> — điều kiện coi là đạt. <i>Vì sao:</i> chuẩn "đủ / chưa đủ" rõ ràng.</>,
+        ]} />
+        <Tip tone="green">Quy tắc vàng: một kết quả = một Owner; đo được (link/file); có hạn rõ; có người duyệt khách quan.</Tip>
+      </div>
+    ) },
     { id: "request", icon: ArrowLeftRight, title: "Yêu cầu phối hợp (Request) — làm việc với phòng khác", keywords: "yêu cầu phối hợp liên phòng ban tiếp nhận deadline sla bàn giao nghiệm thu", body: (
       <div className="space-y-2">
         <Tip>Nguyên tắc: <b>không</b> tự tạo task giao thẳng cho nhân sự phòng khác. Việc cần phòng khác xử lý phải đi qua <b>Yêu cầu phối hợp</b> để có cam kết + deadline 2 bên + người chịu trách nhiệm rõ.</Tip>
@@ -3661,6 +3687,57 @@ function HelpPage() {
           <>Bấm <El>Duyệt hoàn thành</El> hoặc <El>Yêu cầu chỉnh sửa</El> (ghi rõ cần sửa gì).</>,
         ]} />
         <Tip tone="green">Người phụ trách <b>không</b> tự duyệt việc của mình — luôn cần người duyệt khác để đảm bảo khách quan.</Tip>
+      </div>
+    ) },
+    { id: "flow_nv", icon: Edit3, title: "Luồng thực tế — Nhân viên", keywords: "nhân viên luồng công việc hằng ngày làm việc gửi duyệt yêu cầu phối hợp một ngày", body: (
+      <div className="space-y-2">
+        <p className="text-[13px] text-zinc-600">Bạn chịu trách nhiệm <b>làm và bàn giao</b> việc của mình đúng hạn, đúng tiêu chí.</p>
+        <p className="text-[13px] font-medium text-zinc-700">Một ngày điển hình</p>
+        <Steps items={[
+          <><b>Mở Trang chủ</b>: xem việc <b>hôm nay / sắp đến hạn / quá hạn</b> và thông báo 🔔.</>,
+          <>Việc được giao → mở, đọc <b>Kết quả kỳ vọng</b> + tiêu chí, bấm <El>Bắt đầu</El> (chuyển "Đang làm").</>,
+          <>Trong lúc làm: cập nhật <b>tiến độ</b>, tick <b>checklist</b>, hỏi/nhắc trong <b>bình luận</b> bằng <El>@Tên</El>.</>,
+          <>Cần phòng khác làm giúp? <b>Không</b> nhờ miệng — mở <El>Yêu cầu phối hợp</El> để có cam kết & hạn.</>,
+          <>Xong: điền <b>Kết quả thực tế</b> (tóm tắt + link/file) → <El>Gửi duyệt</El>.</>,
+          <>Nếu bị <El>Yêu cầu chỉnh sửa</El> → đọc ghi chú, sửa, gửi lại.</>,
+        ]} />
+        <Tip tone="sky">Ví dụ (Mai – Content): nhận việc "Hoàn thiện brief KOC đai lưng" → làm → dán link Google Doc + tóm tắt → Gửi duyệt cho Leader Content (Linh).</Tip>
+        <Tip>Sắp trễ hạn? Báo sớm trong bình luận hoặc <b>đề xuất đổi deadline</b> — đừng để quá hạn rồi mới nói.</Tip>
+      </div>
+    ) },
+    { id: "flow_leader", icon: Users, title: "Luồng thực tế — Leader phòng", keywords: "leader trưởng phòng giao việc duyệt tiếp nhận yêu cầu điều phối blocker escalation trình ceo", body: (
+      <div className="space-y-2">
+        <p className="text-[13px] text-zinc-600">Bạn <b>điều phối</b> việc trong phòng: giao đúng người, chốt hạn, duyệt kết quả, gỡ vướng.</p>
+        <p className="text-[13px] font-medium text-zinc-700">Việc thường xuyên</p>
+        <Steps items={[
+          <><b>Xem việc phòng</b> ở mục <El>Phòng ban</El> và <El>Chờ duyệt</El> (việc chờ bạn nghiệm thu).</>,
+          <><b>Giao việc</b>: tạo task, đặt rõ <b>Owner + Deadline + Người duyệt</b>.</>,
+          <>Phòng khác gửi <b>Yêu cầu phối hợp</b> đến phòng bạn → <El>Tiếp nhận</El>, chỉ định <b>Người xử lý</b> và chốt deadline 2 bên.</>,
+          <><b>Duyệt kết quả</b> nhân viên: <El>Duyệt hoàn thành</El> hoặc <El>Yêu cầu chỉnh sửa</El> (ghi rõ cần sửa gì).</>,
+          <>Theo dõi <b>quá hạn / escalation</b> của phòng; ghi <b>Blocker</b> kèm người xử lý + hạn khi có điểm vướng.</>,
+          <>Việc vượt thẩm quyền (ngân sách lớn, giá, launch chiến lược) → đặt <b>người duyệt = CEO</b>, hoặc dùng <b>Đề xuất thay đổi dự án</b>.</>,
+        ]} />
+        <Tip tone="sky">Ví dụ (Trang – Booking KOC): nhận yêu cầu "gửi 5 mẫu đai gối cho KOC" từ Content → tiếp nhận, giao Thảo xử lý, chốt hạn; cuối tuần duyệt báo cáo booking.</Tip>
+        <Tip>Ranh giới: Leader <b>tự quyết</b> vận hành hằng ngày; việc <b>chiến lược / ngân sách lớn</b> thì trình CEO — đừng ôm quá quyền.</Tip>
+      </div>
+    ) },
+    { id: "flow_ceo", icon: Star, title: "Luồng thực tế — CEO / Chủ tịch", keywords: "ceo chủ tịch duyệt thay đổi dự án override deadline go no-go milestone sức khỏe audit trung tâm hành động", body: (
+      <div className="space-y-2">
+        <p className="text-[13px] text-zinc-600">Bạn <b>quyết định việc lớn</b> và <b>giữ nhịp</b> — hệ thống chỉ đẩy lên việc thật sự cần bạn.</p>
+        <p className="text-[13px] font-medium text-zinc-700">Trung tâm hành động (Trang chủ CEO)</p>
+        <Bullets items={[
+          <><b>Chờ CEO duyệt / quyết định</b>: việc chiến lược (ngân sách tháng, giá B2B, launch).</>,
+          <><b>Khẩn cấp quá hạn</b> nhiều ngày · <b>Dự án có nguy cơ</b> · <b>Milestone quá hạn</b> · <b>Yêu cầu quá SLA Level 3</b>.</>,
+        ]} />
+        <p className="mt-2 text-[13px] font-medium text-zinc-700">Việc bạn xử lý</p>
+        <Steps items={[
+          <><b>Duyệt việc chiến lược</b> trong <El>Chờ duyệt</El> (VD báo giá B2B, ngân sách campaign).</>,
+          <><b>Duyệt / từ chối Đề xuất thay đổi dự án</b> (dời deadline tổng, đổi Owner/PM…) → tự ghi <b>Nhật ký quyết định</b>.</>,
+          <>Khi khẩn: <b>Điều chỉnh deadline trực tiếp</b> trên Yêu cầu (ghi lý do, báo 2 phòng, lưu <b>Audit</b>).</>,
+          <><b>Go / No-Go</b> sản phẩm mới (pipeline R&D → Thu mua → Marketing).</>,
+        ]} />
+        <Tip tone="sky">Ví dụ: duyệt "Dời launch đai lưng V2 7 ngày" (mẫu về trễ); rút gấp deadline xử lý lô đai gối GT-102 vì ảnh hưởng rating shop.</Tip>
+        <Tip tone="green">Theo dõi bằng <b>Milestone + Sức khỏe dự án</b>, không sa đà từng task nhỏ. Dùng <b>Nhật ký / Audit</b> để review khách quan.</Tip>
       </div>
     ) },
     { id: "perm", icon: Lock, title: "Quyền & vai trò", keywords: "quyền vai trò nhân viên leader ceo admin bảo mật member", body: (
